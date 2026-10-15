@@ -5,6 +5,12 @@ A headless Lyrion Music Server player for macOS and Windows, based on
 web interface or a compatible controller. Player discovers the server on your
 local network, or connects to a specified server.
 
+Automatic discovery probes both localhost (`127.0.0.1`) and the local network's
+broadcast address on UDP port 3483. A server on the same Mac or PC can therefore
+be found even when network broadcasts are unavailable. The first valid reply
+selects the server; use `-s host[:port]` to choose a particular server when more
+than one is available or it uses a nonstandard SlimProto port.
+
 Player uses the signed-in user's **system default audio output**. Changing that
 output while music is playing reroutes audio through Core Audio on macOS or WASAPI
 on Windows. Playback stays connected to Lyrion; it does not restart the player or
@@ -24,7 +30,7 @@ installer. If FLAC is missing, CMake can download and build FLAC 1.5.0; set
 Install Xcode Command Line Tools, then choose Homebrew or MacPorts for dependencies.
 Apple Silicon and Intel builds use the same source.
 
-With Homebrew:
+With [Homebrew](https://brew.sh/):
 
 ```sh
 brew install cmake flac libvorbis mpg123 libsoxr python
@@ -119,6 +125,177 @@ Logs: `%LOCALAPPDATA%\Player\player.log`. Task Scheduler shows the task as
 999 times per failure sequence. Allow Player through your firewall on your private
 network so it can discover/connect to Lyrion.
 
+## Multiple instances
+
+Run one process per server. Give every instance a distinct name and a stable,
+unique `-m` identifier. The identifier uses MAC-address notation to identify the
+software player to Lyrion; it does not change your network adapter's address.
+Without `-m`, instances on the same computer can inherit the same identity.
+Use `-s` to select each server explicitly rather than relying on discovery.
+Replace the example server IP addresses with your own.
+
+All instances follow the same system default audio output. If more than one
+instance plays at once, their audio mixes. Each has its own connection and queue
+on its selected server; there is no combined library.
+
+### Run two players manually
+
+On macOS, run these commands in separate terminals:
+
+```sh
+./build/player -n "My Mac - Server A" -s 192.168.1.10 -m 02:00:00:00:00:01
+./build/player -n "My Mac - Server B" -s 192.168.1.20 -m 02:00:00:00:00:02
+```
+
+Stop each instance with Ctrl+C in its terminal. On Windows, launch both from
+PowerShell:
+
+```powershell
+.\build\Release\player.exe -n 'My PC - Server A' -s 192.168.1.10 -m 02:00:00:00:00:01
+.\build\Release\player.exe -n 'My PC - Server B' -s 192.168.1.20 -m 02:00:00:00:00:02
+```
+
+### Install multiple macOS startup entries
+
+The bundled `service.py` installer manages one LaunchAgent per user. Running it
+twice replaces that entry. To install two instances, create separate LaunchAgents
+with unique labels and log files using the example below. Stop any foreground
+copies first. If replacing the single-instance service, remove it with the
+`--uninstall` command above before installing these entries.
+
+Install the binary to its permanent location:
+
+```sh
+cmake --install build --prefix "$HOME/.local"
+```
+
+Run the following from a terminal in your signed-in macOS session. For MacPorts,
+you can replace `python3` with `/opt/local/bin/python3.13`.
+
+```sh
+python3 - <<'PY'
+import os
+from pathlib import Path
+import plistlib
+import subprocess
+
+binary = (Path.home() / ".local/bin/player").resolve(strict=True)
+agents = Path.home() / "Library/LaunchAgents"
+logs = Path.home() / "Library/Logs/Player"
+agents.mkdir(parents=True, exist_ok=True)
+logs.mkdir(parents=True, exist_ok=True)
+domain = f"gui/{os.getuid()}"
+instances = [
+    ("server-a", "My Mac - Server A", "192.168.1.10", "02:00:00:00:00:01"),
+    ("server-b", "My Mac - Server B", "192.168.1.20", "02:00:00:00:00:02"),
+]
+for instance, name, server, identity in instances:
+    label = f"org.lyrion.player.{instance}"
+    path = agents / f"{label}.plist"
+    definition = {
+        "Label": label,
+        "ProgramArguments": [str(binary), "-n", name, "-s", server,
+                             "-m", identity, "-d", "output=info"],
+        "RunAtLoad": True,
+        "KeepAlive": True,
+        "ThrottleInterval": 10,
+        "ProcessType": "Interactive",
+        "StandardOutPath": str(logs / f"{instance}.log"),
+        "StandardErrorPath": str(logs / f"{instance}.log"),
+    }
+    subprocess.run(["launchctl", "bootout", f"{domain}/{label}"],
+                   check=False, capture_output=True)
+    with path.open("wb") as output:
+        plistlib.dump(definition, output)
+    path.chmod(0o600)
+    subprocess.run(["launchctl", "bootstrap", domain, str(path)], check=True)
+    print(f"Started {label}; log: {logs / (instance + '.log')}")
+PY
+```
+
+Both instances start immediately and at subsequent sign-ins. Check an instance:
+
+```sh
+launchctl print "gui/$(id -u)/org.lyrion.player.server-a"
+tail -f "$HOME/Library/Logs/Player/server-a.log"
+```
+
+To stop and uninstall both startup entries, retaining the binary and logs:
+
+```sh
+for instance in server-a server-b; do
+  launchctl bootout "gui/$(id -u)/org.lyrion.player.$instance"
+  rm -f "$HOME/Library/LaunchAgents/org.lyrion.player.$instance.plist"
+done
+```
+
+### Install multiple Windows startup entries
+
+The bundled `Install-Player.ps1` manages one task per user. Running it twice
+replaces that task. To install multiple instances, register separate Task
+Scheduler tasks as below. Close foreground players first. If replacing the
+single-instance task, remove it using `Install-Player.ps1 -Uninstall` above.
+
+Keep `player.exe` and its codec DLLs together in a permanent directory. Run this
+in PowerShell as the user who will play music, adjusting the executable path and
+server addresses:
+
+```powershell
+$binary = (Resolve-Path "$env:LOCALAPPDATA\Player\player.exe").Path
+$user = [System.Security.Principal.WindowsIdentity]::GetCurrent()
+$logs = Join-Path $env:LOCALAPPDATA 'Player'
+New-Item -ItemType Directory -Force -Path $logs | Out-Null
+$instances = @(
+    @{ Id = 'server-a'; Name = 'My PC - Server A'; Server = '192.168.1.10'; Mac = '02:00:00:00:00:01' },
+    @{ Id = 'server-b'; Name = 'My PC - Server B'; Server = '192.168.1.20'; Mac = '02:00:00:00:00:02' }
+)
+$trigger = New-ScheduledTaskTrigger -AtLogOn -User $user.Name
+$principal = New-ScheduledTaskPrincipal -UserId $user.Name -LogonType Interactive -RunLevel Limited
+$settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries `
+    -ExecutionTimeLimit ([TimeSpan]::Zero) -RestartCount 999 -RestartInterval (New-TimeSpan -Minutes 1) `
+    -MultipleInstances IgnoreNew -StartWhenAvailable
+foreach ($instance in $instances) {
+    $taskName = "LyrionPlayer-$($user.User.Value)-$($instance.Id)"
+    $log = Join-Path $logs "$($instance.Id).log"
+    $arguments = '-n "{0}" -s {1} -m {2} -d output=info -f "{3}"' -f `
+        $instance.Name, $instance.Server, $instance.Mac, $log
+    $action = New-ScheduledTaskAction -Execute $binary -Argument $arguments `
+        -WorkingDirectory (Split-Path $binary)
+    if (Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue) {
+        Stop-ScheduledTask -TaskName $taskName
+    }
+    Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger `
+        -Principal $principal -Settings $settings -Force | Out-Null
+    Start-ScheduledTask -TaskName $taskName
+    Write-Output "Started $taskName; log: $log"
+}
+```
+
+Use names without embedded double quotes in this example. Both tasks start
+immediately and at subsequent sign-ins. Logs are
+`%LOCALAPPDATA%\Player\server-a.log` and `server-b.log`. View each task in Task
+Scheduler, or list them with:
+
+```powershell
+Get-ScheduledTask -TaskName "LyrionPlayer-$([System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value)-*"
+```
+
+To stop and uninstall these two tasks, retaining the executable and logs:
+
+```powershell
+$sid = [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+foreach ($instance in 'server-a', 'server-b') {
+    $taskName = "LyrionPlayer-$sid-$instance"
+    if (Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue) {
+        Stop-ScheduledTask -TaskName $taskName
+        Unregister-ScheduledTask -TaskName $taskName -Confirm:$false
+    }
+}
+```
+
+These manually created entries are independent of the single-instance installers.
+Use the cleanup commands in this section to remove them.
+
 ## Playback and options
 
 ```sh
@@ -158,7 +335,10 @@ Lyrion. Automatic log rotation and packaged installers are not included yet.
 `ctest` uses a separate `player_test_audio` executable with a silent backend. It
 tests a SlimProto handshake against a local mock server, HTTP PCM streaming,
 44.1-to-48 kHz resampling, an advancing playback clock, pause, and rejection of
-fixed-device output. It never plays sound or connects to your real music server.
+fixed-device output. It also tests localhost discovery against an isolated mock
+server without `-s`, including rejection of invalid discovery replies. Discovery
+tests use a temporary port through a test-only override; production always probes
+port 3483. Tests never play sound or connect to your real music server.
 A CI workflow is provided to run these checks on macOS and Windows.
 
 Physical device switching requires manual validation on both systems:

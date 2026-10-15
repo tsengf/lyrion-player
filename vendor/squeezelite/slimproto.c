@@ -30,6 +30,7 @@ static log_level loglevel;
 #define SQUEEZENETWORK "mysqueezebox.com:3483"
 
 #define PORT 3483
+static unsigned discovery_port = PORT;
 
 #define MAXBUF 4096
 
@@ -789,8 +790,7 @@ in_addr_t discover_server(char *default_server) {
 
 	memset(&d, 0, sizeof(d));
 	d.sin_family = AF_INET;
-	d.sin_port = htons(PORT);
-	d.sin_addr.s_addr = htonl(INADDR_BROADCAST);
+	d.sin_port = htons(discovery_port);
 
 	pollinfo.fd = disc_sock;
 	pollinfo.events = POLLIN;
@@ -800,15 +800,26 @@ in_addr_t discover_server(char *default_server) {
 		LOG_INFO("sending discovery");
 		memset(&s, 0, sizeof(s));
 
+		/* Broadcast need not reach this host, especially without a LAN route.
+		 * Probe loopback too, retaining LAN discovery for remote servers. */
+		d.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
 		if (sendto(disc_sock, buf, 1, 0, (struct sockaddr *)&d, sizeof(d)) < 0) {
-			LOG_INFO("error sending disovery");
+			LOG_DEBUG("localhost discovery send failed: %d", last_error());
+		}
+		d.sin_addr.s_addr = htonl(INADDR_BROADCAST);
+		if (sendto(disc_sock, buf, 1, 0, (struct sockaddr *)&d, sizeof(d)) < 0) {
+			LOG_DEBUG("network discovery send failed: %d", last_error());
 		}
 
 		if (poll(&pollinfo, 1, 5000) == 1) {
 			char readbuf[10];
 			socklen_t slen = sizeof(s);
-			recvfrom(disc_sock, readbuf, 10, 0, (struct sockaddr *)&s, &slen);
-			LOG_INFO("got response from: %s:%d", inet_ntoa(s.sin_addr), ntohs(s.sin_port));
+			if (recvfrom(disc_sock, readbuf, sizeof(readbuf), 0, (struct sockaddr *)&s, &slen) > 0 && readbuf[0] == 'E') {
+				LOG_INFO("got response from: %s:%d", inet_ntoa(s.sin_addr), ntohs(s.sin_port));
+			} else {
+				LOG_DEBUG("ignoring invalid discovery response");
+				s.sin_addr.s_addr = 0;
+			}
 		}
 
 		if (default_server) {
@@ -841,6 +852,15 @@ void slimproto(log_level level, char *server, u8_t mac[6], const char *name, con
 	loglevel = level;
 	running = true;
 
+#if PLAYER_NULL_AUDIO
+	/* Keep integration discovery tests isolated from real Lyrion servers. */
+	const char *test_port = getenv("PLAYER_TEST_SLIMPROTO_PORT");
+	if (test_port) {
+		unsigned long value = strtoul(test_port, NULL, 10);
+		if (value > 0 && value <= 65535) discovery_port = (unsigned)value;
+	}
+#endif
+
 	if (server) {
 		server_addr(server, &slimproto_ip, &slimproto_port);
 	}
@@ -850,7 +870,7 @@ void slimproto(log_level level, char *server, u8_t mac[6], const char *name, con
 	}
 
 	if (!slimproto_port) {
-		slimproto_port = PORT;
+		slimproto_port = discovery_port;
 	}
 
 	if (name) {

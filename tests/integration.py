@@ -1,6 +1,7 @@
 """Exercise the real SlimProto/PCM/resampling/output path with silent audio."""
 import http.server
 import math
+import os
 from pathlib import Path
 import socket
 import struct
@@ -34,6 +35,47 @@ def send(sock, payload):
 
 
 class PlayerTests(unittest.TestCase):
+    def test_loopback_discovery(self):
+        # Binding only loopback means a LAN broadcast cannot satisfy this test.
+        with socket.socket() as server, socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as discovery, \
+                tempfile.TemporaryFile(mode="w+b") as logs:
+            server.bind(("127.0.0.1", 0))
+            server.listen()
+            server.settimeout(8)
+            port = server.getsockname()[1]
+            discovery.bind(("127.0.0.1", port))
+            discovery.settimeout(8)
+            process = subprocess.Popen([PLAYER, "-n", "Discovery Test",
+                "-m", "02:00:00:00:00:03", "-d", "slimproto=debug"],
+                env={**os.environ, "PLAYER_TEST_SLIMPROTO_PORT": str(port)},
+                stdout=logs, stderr=logs)
+            try:
+                request, address = discovery.recvfrom(256)
+                self.assertEqual(request, b"e")
+                discovery.sendto(b"invalid", address)
+                server.settimeout(0.3)
+                with self.assertRaises(socket.timeout):
+                    connection, _ = server.accept()
+                    connection.close()
+                server.settimeout(8)
+                discovery.sendto(b"E", address)
+                with server.accept()[0] as connection:
+                    connection.settimeout(5)
+                    opcode, hello = packet(connection)
+                    self.assertEqual(opcode, b"HELO")
+                    self.assertIn(b"ModelName=Player", hello)
+            except Exception:
+                logs.seek(0)
+                print(logs.read().decode(errors="replace"), file=sys.stderr)
+                raise
+            finally:
+                process.terminate()
+                try:
+                    process.wait(timeout=7)
+                except subprocess.TimeoutExpired:
+                    process.kill()
+                    process.wait()
+
     def test_help_and_default_output(self):
         result = subprocess.run([PLAYER, "-?"], capture_output=True, timeout=5)
         self.assertIn(b"Player 0.1.0", result.stdout)
