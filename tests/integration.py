@@ -1,0 +1,129 @@
+"""Exercise the real SlimProto/PCM/resampling/output path with silent audio."""
+import http.server
+import math
+from pathlib import Path
+import socket
+import struct
+import subprocess
+import sys
+import tempfile
+import threading
+import time
+import unittest
+
+PLAYER = str(Path(sys.argv.pop(1)).resolve())
+
+
+def exact(sock, size):
+    result = b""
+    while len(result) < size:
+        chunk = sock.recv(size - len(result))
+        if not chunk:
+            raise EOFError("Player disconnected")
+        result += chunk
+    return result
+
+
+def packet(sock):
+    opcode, length = struct.unpack("!4sI", exact(sock, 8))
+    return opcode, exact(sock, length)
+
+
+def send(sock, payload):
+    sock.sendall(struct.pack("!H", len(payload)) + payload)
+
+
+class PlayerTests(unittest.TestCase):
+    def test_help_and_default_output(self):
+        result = subprocess.run([PLAYER, "-?"], capture_output=True, timeout=5)
+        self.assertIn(b"Player 0.1.0", result.stdout)
+        result = subprocess.run([PLAYER, "-l"], capture_output=True, timeout=5)
+        self.assertIn(b"automatically follows changes", result.stdout)
+
+    def test_reject_fixed_device(self):
+        result = subprocess.run([PLAYER, "-o", "1"], capture_output=True, timeout=5)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn(b"requires default output", result.stderr)
+
+    def test_pcm_playback_and_pause(self):
+        # Nonzero stereo PCM at 44.1 kHz exercises conversion to our 48 kHz clock.
+        pcm = b"".join(struct.pack("<hh", value, value) for value in
+            (int(3000 * math.sin(2 * math.pi * 440 * i / 44100)) for i in range(44100 * 6)))
+
+        class Handler(http.server.BaseHTTPRequestHandler):
+            def do_GET(self):
+                self.send_response(200)
+                self.send_header("Content-Length", str(len(pcm)))
+                self.end_headers()
+                self.wfile.write(pcm)
+
+            def log_message(self, *args):
+                pass
+
+        http_server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        worker = threading.Thread(target=http_server.serve_forever, daemon=True)
+        worker.start()
+        self.addCleanup(http_server.server_close)
+        self.addCleanup(http_server.shutdown)
+        with socket.socket() as server, tempfile.TemporaryFile(mode="w+b") as logs:
+            server.bind(("127.0.0.1", 0))
+            server.listen()
+            server.settimeout(10)
+            process = subprocess.Popen([PLAYER, "-s", f"127.0.0.1:{server.getsockname()[1]}",
+                "-m", "02:00:00:00:00:01", "-n", "Player Test", "-d", "all=info"],
+                stdout=logs, stderr=logs)
+            try:
+                with server.accept()[0] as connection:
+                    connection.settimeout(10)
+                    opcode, hello = packet(connection)
+                    self.assertEqual(opcode, b"HELO")
+                    self.assertIn(b"ModelName=Player", hello)
+                    send(connection, b"audg" + struct.pack("!IIBBII", 0, 0, 1, 0, 65536, 65536))
+                    # 16-bit, 44.1 kHz, stereo, little endian; start immediately.
+                    strm = b"strms1p1321" + bytes([1, 0, 0, ord('0'), 0, 1, 0])
+                    strm += struct.pack("!IH4s", 0, http_server.server_port, socket.inet_aton("127.0.0.1"))
+                    send(connection, strm + b"GET /audio HTTP/1.0\r\n\r\n")
+                    events = set()
+                    deadline = time.monotonic() + 10
+                    while b"STMs" not in events and time.monotonic() < deadline:
+                        opcode, body = packet(connection)
+                        if opcode == b"STAT":
+                            events.add(body[:4])
+                    self.assertIn(b"STMs", events, "Output never started")
+                    # A status query after playback must show an advancing audio clock.
+                    time.sleep(0.5)
+                    timestamp = struct.pack("!I", 0x12345678)
+                    send(connection, b"strmt" + bytes(13) + timestamp + bytes(6))
+                    deadline = time.monotonic() + 10
+                    while True:
+                        connection.settimeout(max(0.01, deadline - time.monotonic()))
+                        opcode, body = packet(connection)
+                        if opcode == b"STAT" and body[:4] == b"STMt" and body[47:51] == timestamp:
+                            self.assertGreater(struct.unpack_from("!I", body, 43)[0], 0)
+                            break
+                    send(connection, b"strmp" + bytes(23))
+                    deadline = time.monotonic() + 10
+                    while True:
+                        connection.settimeout(max(0.01, deadline - time.monotonic()))
+                        opcode, body = packet(connection)
+                        if opcode == b"STAT" and body[:4] == b"STMp":
+                            break
+            except Exception:
+                logs.seek(0)
+                print(logs.read().decode(errors="replace"), file=sys.stderr)
+                raise
+            finally:
+                process.terminate()
+                try:
+                    process.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    process.kill()
+                    process.wait()
+            logs.seek(0)
+            text = logs.read().decode(errors="replace")
+            self.assertIn("resampling from 44100 -> 48000", text)
+            self.assertIn("Test backend received nonzero PCM samples", text)
+
+
+if __name__ == "__main__":
+    unittest.main()

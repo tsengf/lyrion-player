@@ -1,0 +1,5 @@
+{
+  "name": "player",
+  "version-string": "0.1.0",
+  "dependencies": ["libflac", "libogg", "libvorbis", "mpg123", "soxr"]
+}
