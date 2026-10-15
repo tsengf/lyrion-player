@@ -90,4 +90,12 @@ if(PLAYER_BUILD_TESTS)
   find_package(Python3 COMPONENTS Interpreter REQUIRED)
   add_test(NAME player_integration COMMAND ${Python3_EXECUTABLE}
     ${CMAKE_CURRENT_SOURCE_DIR}/tests/integration.py $<TARGET_FILE:player_test_audio>)
+  add_test(NAME player_service COMMAND ${Python3_EXECUTABLE}
+    ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_service.py)
+  if(WIN32)
+    find_program(PLAYER_POWERSHELL NAMES pwsh powershell REQUIRED)
+    add_test(NAME player_windows_service COMMAND ${PLAYER_POWERSHELL}
+      -NoProfile -NonInteractive -ExecutionPolicy Bypass -File
+      ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_windows_service.ps1)
+  endif()
 endif()

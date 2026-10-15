@@ -103,7 +103,7 @@ another location. Uninstall automatic startup with:
 python3 scripts/macos/service.py --uninstall
 ```
 
-Logs: `~/Library/Logs/Player/player.log`.
+Logs: `~/Library/Logs/lyrion-player/player.log`.
 Status: `launchctl print gui/$(id -u)/org.lyrion.player`.
 
 ### Windows
@@ -111,16 +111,16 @@ Status: `launchctl print gui/$(id -u)/org.lyrion.player`.
 Keep the executable and codec DLLs in a permanent directory, then register it:
 
 ```powershell
-.\scripts\windows\Install-Player.ps1 -Executable 'C:\Users\you\AppData\Local\Player\player.exe' -Name 'My PC' -Server '192.168.1.10'
+.\scripts\windows\service.ps1 -Executable 'C:\Users\you\AppData\Local\Player\player.exe' -Name 'My PC' -Server '192.168.1.10'
 ```
 
 Omit `-Server` for discovery. Uninstall automatic startup with:
 
 ```powershell
-.\scripts\windows\Install-Player.ps1 -Uninstall
+.\scripts\windows\service.ps1 -Uninstall
 ```
 
-Logs: `%LOCALAPPDATA%\Player\player.log`. Task Scheduler shows the task as
+Logs: `%LOCALAPPDATA%\lyrion-player\player.log`. Task Scheduler shows the task as
 `LyrionPlayer-<your user SID>`. Windows retries failed runs every minute, up to
 999 times per failure sequence. Allow Player through your firewall on your private
 network so it can discover/connect to Lyrion.
@@ -157,144 +157,140 @@ PowerShell:
 
 ### Install multiple macOS startup entries
 
-The bundled `service.py` installer manages one LaunchAgent per user. Running it
-twice replaces that entry. To install two instances, create separate LaunchAgents
-with unique labels and log files using the example below. Stop any foreground
-copies first. If replacing the single-instance service, remove it with the
-`--uninstall` command above before installing these entries.
+Use `service.py` once for each instance. `--instance` selects a separate startup
+entry, and `--mac` supplies its stable player identity. Named instances require
+`--mac`; give each instance a different identifier. Replace the example server
+addresses and names before running these commands. Stop any foreground copies
+first. No `sudo` is needed.
 
-Install the binary to its permanent location:
+Install the binary to a permanent location:
 
 ```sh
 cmake --install build --prefix "$HOME/.local"
 ```
 
-Run the following from a terminal in your signed-in macOS session. For MacPorts,
-you can replace `python3` with `/opt/local/bin/python3.13`.
+If replacing a previously installed default service, remove it first:
 
 ```sh
-python3 - <<'PY'
-import os
-from pathlib import Path
-import plistlib
-import subprocess
-
-binary = (Path.home() / ".local/bin/player").resolve(strict=True)
-agents = Path.home() / "Library/LaunchAgents"
-logs = Path.home() / "Library/Logs/Player"
-agents.mkdir(parents=True, exist_ok=True)
-logs.mkdir(parents=True, exist_ok=True)
-domain = f"gui/{os.getuid()}"
-instances = [
-    ("server-a", "My Mac - Server A", "192.168.1.10", "02:00:00:00:00:01"),
-    ("server-b", "My Mac - Server B", "192.168.1.20", "02:00:00:00:00:02"),
-]
-for instance, name, server, identity in instances:
-    label = f"org.lyrion.player.{instance}"
-    path = agents / f"{label}.plist"
-    definition = {
-        "Label": label,
-        "ProgramArguments": [str(binary), "-n", name, "-s", server,
-                             "-m", identity, "-d", "output=info"],
-        "RunAtLoad": True,
-        "KeepAlive": True,
-        "ThrottleInterval": 10,
-        "ProcessType": "Interactive",
-        "StandardOutPath": str(logs / f"{instance}.log"),
-        "StandardErrorPath": str(logs / f"{instance}.log"),
-    }
-    subprocess.run(["launchctl", "bootout", f"{domain}/{label}"],
-                   check=False, capture_output=True)
-    with path.open("wb") as output:
-        plistlib.dump(definition, output)
-    path.chmod(0o600)
-    subprocess.run(["launchctl", "bootstrap", domain, str(path)], check=True)
-    print(f"Started {label}; log: {logs / (instance + '.log')}")
-PY
+python3 scripts/macos/service.py --uninstall
 ```
 
-Both instances start immediately and at subsequent sign-ins. Check an instance:
+Install and start Server A's player:
+
+```sh
+python3 scripts/macos/service.py --instance server-a \
+  --name "My Mac - Server A" --server 192.168.1.10 --mac 02:00:00:00:00:01
+```
+
+Install and start Server B's player separately:
+
+```sh
+python3 scripts/macos/service.py --instance server-b \
+  --name "My Mac - Server B" --server 192.168.1.20 --mac 02:00:00:00:00:02
+```
+
+For MacPorts, you can replace `python3` with `/opt/local/bin/python3.13`.
+Use `--executable /absolute/path/to/player` if the binary is elsewhere. Both
+instances start immediately and at subsequent sign-ins. Running an install
+command again replaces and restarts only that named instance; supply its full
+configuration again, including the same `--mac` identifier.
+
+The LaunchAgents are `org.lyrion.player.server-a` and
+`org.lyrion.player.server-b`. Check each instance's status:
 
 ```sh
 launchctl print "gui/$(id -u)/org.lyrion.player.server-a"
-tail -f "$HOME/Library/Logs/Player/server-a.log"
+launchctl print "gui/$(id -u)/org.lyrion.player.server-b"
 ```
 
-To stop and uninstall both startup entries, retaining the binary and logs:
+Each instance has its own log. Ctrl+C stops following the logs without stopping
+the players:
 
 ```sh
-for instance in server-a server-b; do
-  launchctl bootout "gui/$(id -u)/org.lyrion.player.$instance"
-  rm -f "$HOME/Library/LaunchAgents/org.lyrion.player.$instance.plist"
-done
+tail -f "$HOME/Library/Logs/lyrion-player/player-server-a.log" "$HOME/Library/Logs/lyrion-player/player-server-b.log"
 ```
+
+Stop and uninstall Server A's startup entry, retaining the binary and logs:
+
+```sh
+python3 scripts/macos/service.py --instance server-a --uninstall
+```
+
+Stop and uninstall Server B's startup entry separately:
+
+```sh
+python3 scripts/macos/service.py --instance server-b --uninstall
+```
+
+Omitting `--instance` continues to manage the original `org.lyrion.player` service
+and `player.log`; it does not update or uninstall any named instance.
 
 ### Install multiple Windows startup entries
 
-The bundled `Install-Player.ps1` manages one task per user. Running it twice
-replaces that task. To install multiple instances, register separate Task
-Scheduler tasks as below. Close foreground players first. If replacing the
-single-instance task, remove it using `Install-Player.ps1 -Uninstall` above.
+Use `service.ps1` once for each instance, just like `service.py` on macOS.
+`-Instance` selects a separate startup task, and `-Mac` supplies its stable player
+identity. Named instances require `-Mac`; give every instance a different
+identifier. Replace the example server addresses and names before running the
+commands. Close any foreground copies first.
 
-Keep `player.exe` and its codec DLLs together in a permanent directory. Run this
-in PowerShell as the user who will play music, adjusting the executable path and
-server addresses:
+Keep `player.exe` and its codec DLLs together in a permanent directory. The
+commands below use the default location, `%LOCALAPPDATA%\Player\player.exe`.
+If your executable is elsewhere, add `-Executable 'C:\path\to\player.exe'` to
+each install command. Run PowerShell as the user who will play music; no
+administrator privileges are needed.
+
+If replacing a previously installed default task, remove it first:
 
 ```powershell
-$binary = (Resolve-Path "$env:LOCALAPPDATA\Player\player.exe").Path
-$user = [System.Security.Principal.WindowsIdentity]::GetCurrent()
-$logs = Join-Path $env:LOCALAPPDATA 'Player'
-New-Item -ItemType Directory -Force -Path $logs | Out-Null
-$instances = @(
-    @{ Id = 'server-a'; Name = 'My PC - Server A'; Server = '192.168.1.10'; Mac = '02:00:00:00:00:01' },
-    @{ Id = 'server-b'; Name = 'My PC - Server B'; Server = '192.168.1.20'; Mac = '02:00:00:00:00:02' }
-)
-$trigger = New-ScheduledTaskTrigger -AtLogOn -User $user.Name
-$principal = New-ScheduledTaskPrincipal -UserId $user.Name -LogonType Interactive -RunLevel Limited
-$settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries `
-    -ExecutionTimeLimit ([TimeSpan]::Zero) -RestartCount 999 -RestartInterval (New-TimeSpan -Minutes 1) `
-    -MultipleInstances IgnoreNew -StartWhenAvailable
-foreach ($instance in $instances) {
-    $taskName = "LyrionPlayer-$($user.User.Value)-$($instance.Id)"
-    $log = Join-Path $logs "$($instance.Id).log"
-    $arguments = '-n "{0}" -s {1} -m {2} -d output=info -f "{3}"' -f `
-        $instance.Name, $instance.Server, $instance.Mac, $log
-    $action = New-ScheduledTaskAction -Execute $binary -Argument $arguments `
-        -WorkingDirectory (Split-Path $binary)
-    if (Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue) {
-        Stop-ScheduledTask -TaskName $taskName
-    }
-    Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger `
-        -Principal $principal -Settings $settings -Force | Out-Null
-    Start-ScheduledTask -TaskName $taskName
-    Write-Output "Started $taskName; log: $log"
-}
+.\scripts\windows\service.ps1 -Uninstall
 ```
 
-Use names without embedded double quotes in this example. Both tasks start
-immediately and at subsequent sign-ins. Logs are
-`%LOCALAPPDATA%\Player\server-a.log` and `server-b.log`. View each task in Task
-Scheduler, or list them with:
+Install and start Server A's player:
+
+```powershell
+.\scripts\windows\service.ps1 -Instance server-a `
+  -Name 'My PC - Server A' -Server 192.168.1.10 -Mac 02:00:00:00:00:01
+```
+
+Install and start Server B's player separately:
+
+```powershell
+.\scripts\windows\service.ps1 -Instance server-b `
+  -Name 'My PC - Server B' -Server 192.168.1.20 -Mac 02:00:00:00:00:02
+```
+
+Both instances start immediately and at subsequent sign-ins. Running an install
+command again replaces and restarts only that named instance; supply its full
+configuration again, including the same `-Mac` identifier.
+
+Task Scheduler shows the entries as `LyrionPlayer-<your user SID>-server-a` and
+`LyrionPlayer-<your user SID>-server-b`. List their status from PowerShell:
 
 ```powershell
 Get-ScheduledTask -TaskName "LyrionPlayer-$([System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value)-*"
 ```
 
-To stop and uninstall these two tasks, retaining the executable and logs:
+Each instance has its own log. Read either log with:
 
 ```powershell
-$sid = [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value
-foreach ($instance in 'server-a', 'server-b') {
-    $taskName = "LyrionPlayer-$sid-$instance"
-    if (Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue) {
-        Stop-ScheduledTask -TaskName $taskName
-        Unregister-ScheduledTask -TaskName $taskName -Confirm:$false
-    }
-}
+Get-Content "$env:LOCALAPPDATA\lyrion-player\player-server-a.log" -Tail 30
+Get-Content "$env:LOCALAPPDATA\lyrion-player\player-server-b.log" -Tail 30
 ```
 
-These manually created entries are independent of the single-instance installers.
-Use the cleanup commands in this section to remove them.
+Stop and uninstall Server A's startup entry, retaining the executable and logs:
+
+```powershell
+.\scripts\windows\service.ps1 -Instance server-a -Uninstall
+```
+
+Stop and uninstall Server B's startup entry separately:
+
+```powershell
+.\scripts\windows\service.ps1 -Instance server-b -Uninstall
+```
+
+Omitting `-Instance` continues to manage the original `LyrionPlayer-<your user SID>`
+task and `player.log`; it does not update or uninstall any named instance.
 
 ## Playback and options
 
@@ -339,6 +335,13 @@ fixed-device output. It also tests localhost discovery against an isolated mock
 server without `-s`, including rejection of invalid discovery replies. Discovery
 tests use a temporary port through a test-only override; production always probes
 port 3483. Tests never play sound or connect to your real music server.
+A separate service test checks that named macOS entries can be installed,
+updated, and removed independently while keeping the original default entry
+compatible. It writes only to a temporary directory and mocks `launchctl`;
+it does not install or start services on your machine.
+On Windows, an additional PowerShell test checks independent task installation,
+updates, removal, and argument validation using in-memory substitutes for Task
+Scheduler and filesystem operations.
 A CI workflow is provided to run these checks on macOS and Windows.
 
 Physical device switching requires manual validation on both systems:
