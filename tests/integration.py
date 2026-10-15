@@ -45,8 +45,8 @@ class PlayerTests(unittest.TestCase):
             port = server.getsockname()[1]
             discovery.bind(("127.0.0.1", port))
             discovery.settimeout(8)
-            process = subprocess.Popen([PLAYER, "-n", "Discovery Test",
-                "-m", "02:00:00:00:00:03", "-d", "slimproto=debug"],
+            process = subprocess.Popen([PLAYER, "--name", "Discovery Test",
+                "--mac", "02:00:00:00:00:03", "--debug", "slimproto=debug"],
                 env={**os.environ, "PLAYER_TEST_SLIMPROTO_PORT": str(port)},
                 stdout=logs, stderr=logs)
             try:
@@ -77,15 +77,36 @@ class PlayerTests(unittest.TestCase):
                     process.wait()
 
     def test_help_and_default_output(self):
-        result = subprocess.run([PLAYER, "-?"], capture_output=True, timeout=5)
-        self.assertIn(b"Player 0.1.0", result.stdout)
-        result = subprocess.run([PLAYER, "-l"], capture_output=True, timeout=5)
-        self.assertIn(b"automatically follows changes", result.stdout)
+        for flag in ("-?", "--help"):
+            result = subprocess.run([PLAYER, flag], capture_output=True, timeout=5)
+            self.assertEqual(result.returncode, 0)
+            self.assertIn(b"Player 0.1.0", result.stdout)
+            self.assertIn(b"--server", result.stdout)
+        for flag in ("-l", "--list-devices"):
+            result = subprocess.run([PLAYER, flag], capture_output=True, timeout=5)
+            self.assertEqual(result.returncode, 0)
+            self.assertIn(b"automatically follows changes", result.stdout)
 
     def test_reject_fixed_device(self):
-        result = subprocess.run([PLAYER, "-o", "1"], capture_output=True, timeout=5)
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn(b"requires default output", result.stderr)
+        for flag, value in (("-o", "1"), ("--output", "1"),
+                            ("--audio-params", "20"), ("--rates", "48000")):
+            result = subprocess.run([PLAYER, flag, value], capture_output=True, timeout=5)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn(b"requires default output", result.stderr)
+
+    def test_invalid_long_options(self):
+        for args in (["--unknown"], ["--server"], ["--name"], ["--debug"], ["--mac"]):
+            result = subprocess.run([PLAYER, *args], capture_output=True, timeout=5)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn(b"Option error", result.stderr)
+
+    def test_long_logfile_option(self):
+        with tempfile.TemporaryDirectory() as directory:
+            log = Path(directory) / "player log.txt"
+            result = subprocess.run([PLAYER, "--logfile", str(log), "--output", "1"],
+                                    capture_output=True, timeout=5)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("requires default output", log.read_text())
 
     def test_pcm_playback_and_pause(self):
         # Nonzero stereo PCM at 44.1 kHz exercises conversion to our 48 kHz clock.
@@ -111,8 +132,8 @@ class PlayerTests(unittest.TestCase):
             server.bind(("127.0.0.1", 0))
             server.listen()
             server.settimeout(10)
-            process = subprocess.Popen([PLAYER, "-s", f"127.0.0.1:{server.getsockname()[1]}",
-                "-m", "02:00:00:00:00:01", "-n", "Player Test", "-d", "all=info"],
+            process = subprocess.Popen([PLAYER, "--server", f"127.0.0.1:{server.getsockname()[1]}",
+                "--mac", "02:00:00:00:00:01", "--name", "Player Test", "--debug", "all=info"],
                 stdout=logs, stderr=logs)
             try:
                 with server.accept()[0] as connection:

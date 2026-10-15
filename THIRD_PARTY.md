@@ -8,8 +8,8 @@
 - Imported root C/header files and upstream README; optional upstream backends
   remain available as reference but are not compiled by Player.
 - Local changes to `main.c`: identify the executable as Player, default the
-  resampling recipe to `hX`, and adjust help for the native backend. The build
-  defines `MODEL_NAME=Player`.
+  resampling recipe to `hX`, add long command-line aliases, and adjust help for
+  the native backend. The build defines `MODEL_NAME=Player`.
 - Player uses its own native output adapter in place of `output_pa.c`.
 - Local changes to `slimproto.c`: probe localhost as well as LAN broadcast during
   discovery, validate discovery replies, and allow an isolated discovery port in

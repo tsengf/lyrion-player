@@ -8,7 +8,7 @@ local network, or connects to a specified server.
 Automatic discovery probes both localhost (`127.0.0.1`) and the local network's
 broadcast address on UDP port 3483. A server on the same Mac or PC can therefore
 be found even when network broadcasts are unavailable. The first valid reply
-selects the server; use `-s host[:port]` to choose a particular server when more
+selects the server; use `--server host[:port]` to choose a particular server when more
 than one is available or it uses a nonstandard SlimProto port.
 
 Player uses the signed-in user's **system default audio output**. Changing that
@@ -37,7 +37,7 @@ brew install cmake flac libvorbis mpg123 libsoxr python
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build --parallel
 ctest --test-dir build --output-on-failure
-./build/player -n "My Mac"
+./build/player --name "My Mac"
 ```
 
 With [MacPorts](https://www.macports.org/install.php):
@@ -50,7 +50,7 @@ cmake -S . -B build -DCMAKE_BUILD_TYPE=Release \
   -DPython3_EXECUTABLE=/opt/local/bin/python3.13
 cmake --build build --parallel
 ctest --test-dir build --output-on-failure
-./build/player -n "My Mac"
+./build/player --name "My Mac"
 ```
 
 The MacPorts resampler port is named [`soxr`](https://ports.macports.org/port/soxr/).
@@ -69,8 +69,8 @@ your vcpkg checkout:
 ```powershell
 cmake -S . -B build -A x64 "-DCMAKE_TOOLCHAIN_FILE=$env:VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake"
 cmake --build build --config Release --parallel
-ctest --test-dir build -C Release --output-on-failure
-.\build\Release\player.exe -n "My PC"
+ctest --test-dir build --build-config Release --output-on-failure
+.\build\Release\player.exe --name "My PC"
 ```
 
 The manifest installs codec dependencies. Keep the DLLs that vcpkg copies beside
@@ -128,10 +128,10 @@ network so it can discover/connect to Lyrion.
 ## Multiple instances
 
 Run one process per server. Give every instance a distinct name and a stable,
-unique `-m` identifier. The identifier uses MAC-address notation to identify the
+unique `--mac` identifier. The identifier uses MAC-address notation to identify the
 software player to Lyrion; it does not change your network adapter's address.
-Without `-m`, instances on the same computer can inherit the same identity.
-Use `-s` to select each server explicitly rather than relying on discovery.
+Without `--mac`, instances on the same computer can inherit the same identity.
+Use `--server` to select each server explicitly rather than relying on discovery.
 Replace the example server IP addresses with your own.
 
 All instances follow the same system default audio output. If more than one
@@ -143,16 +143,16 @@ on its selected server; there is no combined library.
 On macOS, run these commands in separate terminals:
 
 ```sh
-./build/player -n "My Mac - Server A" -s 192.168.1.10 -m 02:00:00:00:00:01
-./build/player -n "My Mac - Server B" -s 192.168.1.20 -m 02:00:00:00:00:02
+./build/player --name "My Mac - Server A" --server 192.168.1.10 --mac 02:00:00:00:00:01
+./build/player --name "My Mac - Server B" --server 192.168.1.20 --mac 02:00:00:00:00:02
 ```
 
 Stop each instance with Ctrl+C in its terminal. On Windows, launch both from
 PowerShell:
 
 ```powershell
-.\build\Release\player.exe -n 'My PC - Server A' -s 192.168.1.10 -m 02:00:00:00:00:01
-.\build\Release\player.exe -n 'My PC - Server B' -s 192.168.1.20 -m 02:00:00:00:00:02
+.\build\Release\player.exe --name 'My PC - Server A' --server 192.168.1.10 --mac 02:00:00:00:00:01
+.\build\Release\player.exe --name 'My PC - Server B' --server 192.168.1.20 --mac 02:00:00:00:00:02
 ```
 
 ### Install multiple macOS startup entries
@@ -295,15 +295,18 @@ task and `player.log`; it does not update or uninstall any named instance.
 ## Playback and options
 
 ```sh
-player -n "Office"                      # Discover Lyrion
-player -n "Office" -s 192.168.1.10       # Connect directly
-player -n "Office" -d output=info       # Log device recovery and rerouting
-player -l                               # Show the default-output policy
+player --name "Office"                          # Discover Lyrion
+player --name "Office" --server 192.168.1.10      # Connect directly
+player --name "Office" --debug output=info       # Log device recovery and rerouting
+player --list-devices                           # Show the default-output policy
 ```
 
-Player inherits Squeezelite's command-line parser. The audio adapter requires
-`default`; omit `-o`, `-a`, and `-r`. Fixed-device, exclusive-mode, and hardware
-format controls from upstream do not apply. Use `-m 02:xx:xx:xx:xx:xx` with a
+Player supports long option names in the examples above and retains Squeezelite's
+short flags for compatibility. Use `player --help` to see available options.
+CMake and macOS system commands retain short flags where no long form exists.
+The audio adapter requires `default`; omit `--output`, `--audio-params`, and
+`--rates`. Fixed-device, exclusive-mode, and hardware
+format controls from upstream do not apply. Use `--mac 02:xx:xx:xx:xx:xx` with a
 unique locally administered MAC-style identifier if you need a stable player
 identity independent of network interfaces. Do not run two copies with the same
 identifier against one server.
@@ -332,7 +335,7 @@ Lyrion. Automatic log rotation and packaged installers are not included yet.
 tests a SlimProto handshake against a local mock server, HTTP PCM streaming,
 44.1-to-48 kHz resampling, an advancing playback clock, pause, and rejection of
 fixed-device output. It also tests localhost discovery against an isolated mock
-server without `-s`, including rejection of invalid discovery replies. Discovery
+server without `--server`, including rejection of invalid discovery replies. Discovery
 tests use a temporary port through a test-only override; production always probes
 port 3483. Tests never play sound or connect to your real music server.
 A separate service test checks that named macOS entries can be installed,

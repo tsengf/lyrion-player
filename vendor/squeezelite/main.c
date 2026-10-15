@@ -61,9 +61,29 @@
 
 #define CODECS CODECS_BASE CODECS_AAC CODECS_FF CODECS_OPUS CODECS_DSD CODECS_MP3
 
+/* Long aliases for Player's documented options; retain upstream short flags. */
+static char *player_option(char *opt) {
+	static const struct { const char *name; char *short_name; } aliases[] = {
+		{ "server", "s" }, { "name", "n" }, { "mac", "m" },
+		{ "debug", "d" }, { "logfile", "f" }, { "list-devices", "l" },
+		{ "output", "o" }, { "audio-params", "a" }, { "rates", "r" },
+		{ "help", "?" }, { "license", "t" }
+	};
+	unsigned i;
+	if (opt[0] == '-') {
+		for (i = 0; i < sizeof(aliases) / sizeof(aliases[0]); ++i) {
+			if (!strcmp(opt + 1, aliases[i].name)) return aliases[i].short_name;
+		}
+	}
+	return opt;
+}
+
 static void usage(const char *argv0) {
 	printf(TITLE " See -t for license terms\n"
 		   "Usage: %s [options]\n"
+		   "Long options: --server, --name, --mac, --debug, --logfile, --list-devices,\n"
+		   "              --output, --audio-params, --rates, --help, --license\n"
+		   "Pass values as separate arguments. Short equivalents are listed below.\n"
 		   "  -s <server>[:<port>]\tConnect to specified server, otherwise uses autodiscovery to find server\n"
 		   "  -o <output device>\tPlayer uses \"default\" and follows system changes; - = diagnostic stdout\n"
 		   "  -l \t\t\tList output devices\n"
@@ -366,7 +386,7 @@ int main(int argc, char **argv) {
 	}
 
 	while (optind < argc && strlen(argv[optind]) >= 2 && argv[optind][0] == '-') {
-		char *opt = argv[optind] + 1;
+		char *opt = player_option(argv[optind] + 1);
 		if (strstr("oabcCdefmMnNpPrsZ"
 #if ALSA
 				   "UVO"
