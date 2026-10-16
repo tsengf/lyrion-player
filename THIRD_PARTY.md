@@ -11,9 +11,9 @@
   resampling recipe to `hX`, add long command-line aliases, and adjust help for
   the native backend. The build defines `MODEL_NAME=Player`.
 - Player uses its own native output adapter in place of `output_pa.c`.
-- Local changes to `slimproto.c`: probe localhost as well as LAN broadcast during
-  discovery, validate discovery replies, and allow an isolated discovery port in
-  the silent test build only.
+- Local changes to `slimproto.c`: use Player's discovery adapter for localhost,
+  general broadcast, and source-bound per-interface LAN probes, and allow an
+  isolated discovery port in the silent test build only.
 
 ## Miniaudio
 

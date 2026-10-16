@@ -49,7 +49,7 @@ set(PLAYER_SOURCES
   ${SL}/main.c ${SL}/slimproto.c ${SL}/buffer.c ${SL}/stream.c ${SL}/utils.c
   ${SL}/output.c ${SL}/output_stdout.c ${SL}/output_pack.c ${SL}/decode.c
   ${SL}/flac.c ${SL}/pcm.c ${SL}/vorbis.c ${SL}/mpg.c
-  ${SL}/process.c ${SL}/resample.c src/output_native.c src/native_audio.c)
+  ${SL}/process.c ${SL}/resample.c src/output_native.c src/native_audio.c src/discovery.c)
 if(WIN32)
   list(APPEND PLAYER_SOURCES src/windows_default.c)
 endif()
@@ -92,6 +92,13 @@ if(PLAYER_BUILD_TESTS)
     ${CMAKE_CURRENT_SOURCE_DIR}/tests/integration.py $<TARGET_FILE:player_test_audio>)
   add_test(NAME player_service COMMAND ${Python3_EXECUTABLE}
     ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_service.py)
+  add_executable(player_discovery_test tests/test_discovery.c src/discovery.c)
+  target_include_directories(player_discovery_test PRIVATE src)
+  if(WIN32)
+    target_link_libraries(player_discovery_test PRIVATE ws2_32 iphlpapi)
+    target_compile_definitions(player_discovery_test PRIVATE _CRT_SECURE_NO_WARNINGS)
+  endif()
+  add_test(NAME player_discovery COMMAND player_discovery_test)
   if(WIN32)
     find_program(PLAYER_POWERSHELL NAMES pwsh powershell REQUIRED)
     add_test(NAME player_windows_service COMMAND ${PLAYER_POWERSHELL}

@@ -35,7 +35,7 @@ def send(sock, payload):
 
 
 class PlayerTests(unittest.TestCase):
-    def test_loopback_discovery(self):
+    def check_discovery(self, interface_probe=False):
         # Binding only loopback means a LAN broadcast cannot satisfy this test.
         with socket.socket() as server, socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as discovery, \
                 tempfile.TemporaryFile(mode="w+b") as logs:
@@ -47,11 +47,19 @@ class PlayerTests(unittest.TestCase):
             discovery.settimeout(8)
             process = subprocess.Popen([PLAYER, "--name", "Discovery Test",
                 "--mac", "02:00:00:00:00:03", "--debug", "slimproto=debug"],
-                env={**os.environ, "PLAYER_TEST_SLIMPROTO_PORT": str(port)},
+                env={**os.environ, "PLAYER_TEST_SLIMPROTO_PORT": str(port),
+                     "PLAYER_TEST_DISCOVERY_INTERFACE": "127.0.0.1" if interface_probe else ""},
                 stdout=logs, stderr=logs)
             try:
                 request, address = discovery.recvfrom(256)
                 self.assertEqual(request, b"e")
+                if interface_probe:
+                    # Ignore the generic socket; reply only to the separate LAN probe.
+                    request, interface_address = discovery.recvfrom(256)
+                    self.assertEqual(request, b"e")
+                    self.assertEqual(interface_address[0], "127.0.0.1")
+                    self.assertNotEqual(interface_address[1], address[1])
+                    address = interface_address
                 discovery.sendto(b"invalid", address)
                 server.settimeout(0.3)
                 with self.assertRaises(socket.timeout):
@@ -75,6 +83,12 @@ class PlayerTests(unittest.TestCase):
                 except subprocess.TimeoutExpired:
                     process.kill()
                     process.wait()
+
+    def test_loopback_discovery(self):
+        self.check_discovery()
+
+    def test_source_bound_interface_discovery(self):
+        self.check_discovery(interface_probe=True)
 
     def test_help_and_default_output(self):
         for flag in ("-?", "--help"):

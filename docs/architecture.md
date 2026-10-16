@@ -4,6 +4,16 @@ Squeezelite supplies discovery, SlimProto, HTTP streaming, codec decoding,
 buffering, volume, fades, and Lyrion playback/status handling. Its source lives in
 `vendor/squeezelite`; Player does not implement a new approximation of SlimProto.
 
+`src/discovery.c` enumerates active IPv4 broadcast interfaces with `getifaddrs`
+on macOS or `GetAdaptersAddresses` on Windows. Each LAN probe has a socket bound
+to its local source address and targets its subnet broadcast. macOS also uses
+`IP_BOUND_IF`; Windows requests the adapter with `IP_UNICAST_IF`. Loopback and
+point-to-point/tunnel adapters are excluded from the LAN list. A generic socket
+retains localhost and limited-broadcast discovery. All sockets are monitored
+together, only valid Lyrion discovery responses are accepted, and every socket
+is closed after a response or timeout. Every retry refreshes the interface list.
+This helps with VPN route selection but does not override traffic filtering.
+
 `src/output_native.c` adapts Squeezelite's existing output interface to native
 audio. It retains the interface's historical `output_init_pa`/`_pa_open` names to
 keep upstream changes small, but does not link PortAudio. It advertises only

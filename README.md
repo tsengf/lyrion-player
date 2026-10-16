@@ -5,11 +5,20 @@ A headless Lyrion Music Server player for macOS and Windows, based on
 web interface or a compatible controller. Player discovers the server on your
 local network, or connects to a specified server.
 
-Automatic discovery probes both localhost (`127.0.0.1`) and the local network's
-broadcast address on UDP port 3483. A server on the same Mac or PC can therefore
-be found even when network broadcasts are unavailable. The first valid reply
+Automatic discovery probes localhost (`127.0.0.1`), the general broadcast address,
+and each active IPv4 LAN interface's subnet broadcast on UDP port 3483. LAN probes
+use separate sockets bound to their interface's local address; on macOS they are
+also pinned to that interface. For example, a Wi-Fi address of `192.168.1.144/24`
+produces a probe to `192.168.1.255`. Interfaces are refreshed on each retry;
+loopback and point-to-point VPN interfaces are excluded from the LAN list.
+A server on the same Mac or PC can be found even without LAN access. The first valid reply
 selects the server; use `--server host[:port]` to choose a particular server when more
 than one is available or it uses a nonstandard SlimProto port.
+
+This improves discovery when a VPN changes the default broadcast route. It cannot
+override VPN policies that block LAN traffic. Use `--debug slimproto=debug` to see
+the interface and destination of each discovery probe. If direct access works
+but broadcasts remain filtered, specify the server with `--server`.
 
 Player uses the signed-in user's **system default audio output**. Changing that
 output while music is playing reroutes audio through Core Audio on macOS or WASAPI
@@ -336,7 +345,9 @@ tests a SlimProto handshake against a local mock server, HTTP PCM streaming,
 44.1-to-48 kHz resampling, an advancing playback clock, pause, and rejection of
 fixed-device output. It also tests localhost discovery against an isolated mock
 server without `--server`, including rejection of invalid discovery replies. Discovery
-tests use a temporary port through a test-only override; production always probes
+tests include replies received only on a separate source-bound interface socket.
+They use a temporary port and simulated interface through test-only overrides;
+production always probes
 port 3483. Tests never play sound or connect to your real music server.
 A separate service test checks that named macOS entries can be installed,
 updated, and removed independently while keeping the original default entry
@@ -345,6 +356,10 @@ it does not install or start services on your machine.
 On Windows, an additional PowerShell test checks independent task installation,
 updates, removal, and argument validation using in-memory substitutes for Task
 Scheduler and filesystem operations.
+Broadcast calculation tests also cover different subnet sizes and reject masks
+without a usable subnet broadcast. For a manual UDP-only check against real
+servers, run `./build/player_discovery_test --probe`; it logs the interface probes
+and first replying server without registering a player or playing audio.
 A CI workflow is provided to run these checks on macOS and Windows.
 
 Physical device switching requires manual validation on both systems:

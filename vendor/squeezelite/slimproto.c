@@ -24,6 +24,7 @@
 
 #include "squeezelite.h"
 #include "slimproto.h"
+#include "discovery.h"
 
 static log_level loglevel;
 
@@ -774,63 +775,24 @@ void wake_controller(void) {
 	wake_signal(wake_e);
 }
 
+static void discovery_log(const char *message) {
+	LOG_DEBUG("%s", message);
+}
+
 in_addr_t discover_server(char *default_server) {
-	struct sockaddr_in d;
-	struct sockaddr_in s;
-	char *buf;
-	struct pollfd pollinfo;
-	unsigned port;
-
-	int disc_sock = socket(AF_INET, SOCK_DGRAM, 0);
-
-	socklen_t enable = 1;
-	setsockopt(disc_sock, SOL_SOCKET, SO_BROADCAST, (const void *)&enable, sizeof(enable));
-
-	buf = "e";
-
-	memset(&d, 0, sizeof(d));
-	d.sin_family = AF_INET;
-	d.sin_port = htons(discovery_port);
-
-	pollinfo.fd = disc_sock;
-	pollinfo.events = POLLIN;
-
+	in_addr_t address;
+	unsigned port = discovery_port;
 	do {
-
-		LOG_INFO("sending discovery");
-		memset(&s, 0, sizeof(s));
-
-		/* Broadcast need not reach this host, especially without a LAN route.
-		 * Probe loopback too, retaining LAN discovery for remote servers. */
-		d.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
-		if (sendto(disc_sock, buf, 1, 0, (struct sockaddr *)&d, sizeof(d)) < 0) {
-			LOG_DEBUG("localhost discovery send failed: %d", last_error());
+		LOG_INFO("sending discovery on localhost and active LAN interfaces");
+		address = player_discovery_probe(discovery_port, 5000, discovery_log);
+		if (address) {
+			struct in_addr found;
+			found.s_addr = address;
+			LOG_INFO("got response from: %s:%u", inet_ntoa(found), discovery_port);
 		}
-		d.sin_addr.s_addr = htonl(INADDR_BROADCAST);
-		if (sendto(disc_sock, buf, 1, 0, (struct sockaddr *)&d, sizeof(d)) < 0) {
-			LOG_DEBUG("network discovery send failed: %d", last_error());
-		}
-
-		if (poll(&pollinfo, 1, 5000) == 1) {
-			char readbuf[10];
-			socklen_t slen = sizeof(s);
-			if (recvfrom(disc_sock, readbuf, sizeof(readbuf), 0, (struct sockaddr *)&s, &slen) > 0 && readbuf[0] == 'E') {
-				LOG_INFO("got response from: %s:%d", inet_ntoa(s.sin_addr), ntohs(s.sin_port));
-			} else {
-				LOG_DEBUG("ignoring invalid discovery response");
-				s.sin_addr.s_addr = 0;
-			}
-		}
-
-		if (default_server) {
-			server_addr(default_server, &s.sin_addr.s_addr, &port);
-		}
-
-	} while (s.sin_addr.s_addr == 0 && running);
-
-	closesocket(disc_sock);
-
-	return s.sin_addr.s_addr;
+		if (default_server) server_addr(default_server, &address, &port);
+	} while (!address && running);
+	return address;
 }
 
 #define FIXED_CAP_LEN 256
