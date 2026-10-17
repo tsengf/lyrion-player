@@ -52,9 +52,39 @@ reinitialization there, without registering its own notification callbacks.
 
 Shutdown signals the worker, joins it, and waits for miniaudio teardown to stop
 all callbacks before freeing the Squeezelite output buffer. User-session process
-lifetime is managed by launchd or Task Scheduler. The installers are explicit
-commands and are never invoked by the build or tests.
+lifetime is owned by the tray application for GUI users. The legacy headless
+installers use launchd or Task Scheduler and are never invoked by the build or tests.
 
 The silent test executable uses the same protocol, decoder, resampler, adapter,
 and lifecycle code with only miniaudio's backend selection changed. It verifies
 protocol-to-output integration; it cannot verify native hardware routing.
+
+## Native tray application
+
+`src/tray/mac_app.mm` uses AppKit; `windows_app.cpp` uses Win32 common controls and
+Shell_NotifyIcon. Both use the C++17 manager in `core.cpp`. JSON configuration has
+an explicit schema version and is replaced atomically. Player IDs are generated
+once and persisted; duplicate IDs are rejected before launching.
+
+The tray app alone registers for user sign-in (SMAppService on macOS, HKCU Run on
+Windows). Each configured instance is an ordinary child with redirected stdin and
+stdout and an independent log. `--managed` emits versioned newline-delimited JSON
+connection/audio events and reads `stop` from stdin. EOF requests shutdown if its
+owner disappears. macOS uses posix_spawn and close-on-exec descriptors; Windows
+restricts inherited handles and uses one kill-on-close Job Object per player.
+The manager stops children cooperatively, then kills any still alive after five
+seconds. Settings windows do not own playback lifetime; Quit does.
+
+A stopped instance stays stopped; editing an active one restarts just that child.
+Unexpected exits retry at 1/2/4 seconds, with the fourth exit in a minute requiring
+manual retry. A launch error affects only that instance. Shutdown disables retries.
+The native main loops poll status without waiting for a server scan: metadata
+scans run asynchronously and support cancellation. The shared discovery adapter
+has separate first-response and collect-all APIs. NAME/UUID/JSON fields identify
+servers and their web ports, with deduplication across interfaces in the manager.
+
+Legacy import enumerates only this user's script-generated registration names,
+checks executable/arguments, and asks before changing OS state. It saves a blocked,
+stopped draft, checks the registration has not changed, saves a backup, removes the
+old startup job, then enables the imported instance. Failure keeps the draft
+blocked for retry. The tray app never creates per-instance startup jobs.

@@ -1,8 +1,10 @@
-# Player
+# Lyrion Player
 
-A headless Lyrion Music Server player for macOS and Windows, based on
+A Lyrion Music Server player for macOS and Windows, based on
 [Squeezelite](https://github.com/ralph-irving/squeezelite). Control it from Lyrion's
-web interface or a compatible controller. Player discovers the server on your
+web interface or a compatible controller. Native macOS menu-bar and Windows
+system-tray apps manage player instances without command-line configuration.
+Player discovers the server on your
 local network, or connects to a specified server.
 
 Automatic discovery probes localhost (`127.0.0.1`), the general broadcast address,
@@ -26,12 +28,80 @@ on Windows. Playback stays connected to Lyrion; it does not restart the player o
 the track. A brief gap while the operating system opens the new device is possible.
 Shared mode lets other applications play audio too.
 
+## Tray app
+
+Requires macOS 13 or later (Apple Silicon or Intel), or Windows 10 or later (x64).
+Build the app using the instructions below. Packaged builds include the backend
+and codec libraries; users do not need Python, Homebrew, MacPorts, or vcpkg.
+
+1. On macOS, copy **Lyrion Player.app** from the package into Applications and
+   open it. On Windows, extract the entire package into a permanent folder and
+   open **Lyrion Player.exe**, keeping `player.exe` and all DLLs beside it.
+2. Open **Instances…** from the menu-bar/tray icon, then choose **Add…**. Enter a
+   player name and select **Automatic**, a discovered server, or **Manual address**.
+   Use **Scan servers** to refresh the discovered list. Manual addresses use a
+   separate SlimProto port, normally `3483`.
+3. Save, select the instance, and choose **Start / Stop**. Select this player in
+   Lyrion and start music there. Repeat Add for additional instances/servers.
+4. Enable **Start at sign-in** to register the tray app once. It is off initially.
+   **Start this instance with the app** controls which instances launch when the
+   tray app opens, and is on for new instances.
+
+**Only the tray app is registered at sign-in.** It owns the player child
+processes; instances have no individual LaunchAgents, scheduled tasks, or Windows
+services. Closing the Instances window keeps playback running. **Quit Lyrion
+Player** stops every managed player before exiting. Sign-in startup runs in your
+user session so playback follows the selected output device.
+
+The tray menu provides per-instance Start/Stop, Edit, View Log, and Open Lyrion,
+plus Start All and Stop All. The Instances window shows connection and audio
+availability. Editing a running instance restarts only that instance. Unexpected
+player exits retry after 1, 2 and 4 seconds; another failure within a minute leaves
+that instance in Error until you start it again. Closing or crashing the tray app
+cannot leave its players running independently.
+
+Each instance gets a saved, unique MAC-style **Player ID**. Keep it unchanged to
+preserve Lyrion's identity and settings. Use a different ID for every instance.
+Automatic selects the first replying server; choose a discovered server or manual
+address to keep an instance attached to a particular server. Discovered selections
+save the server's current IP address. Use a stable hostname/manual address or
+select it again if that address changes. Open Lyrion uses the discovered web port
+(default `9000`); set the optional Web URL for a custom HTTPS/proxy address.
+
+On macOS, Start at sign-in uses `SMAppService`. If approval is required, enable
+Lyrion Player in System Settings → General → Login Items. On Windows, it uses one
+`LyrionPlayerTray` value in your own account's Run registry key. Put the app in its
+permanent location before enabling startup. These are user-session registrations;
+no administrator privileges are needed.
+
+### Import existing startup entries
+
+Choose **Import…** in Instances to migrate entries created by `service.py` or
+`service.ps1` for your current user. Review each confirmation: it preserves the
+player name, server and ID, backs up the old registration, stops/removes that
+registration, then starts the instance under the tray app. If an old entry omitted
+its ID, import resolves the backend's current network identity before migration.
+A failed migration retains a stopped draft that cannot start until **Import…** is
+retried successfully. Unsupported custom launch options are reported for manual
+migration. Enable the tray app's **Start at sign-in** separately after importing.
+Other users' entries are not imported.
+
+Configuration and import backups:
+
+- macOS: `~/Library/Application Support/lyrion-player/config.json` and `import-backups/`.
+- Windows: `%LOCALAPPDATA%\lyrion-player\config.json` and `import-backups\`.
+
+Logs use `player-<instance ID>.log` in `~/Library/Logs/lyrion-player/` on macOS and
+`%LOCALAPPDATA%\lyrion-player\` on Windows. Use View Log to open the selected
+instance's file. Removing an instance retains its logs. Invalid configuration is
+preserved and reported; Open configuration folder lets you locate it for repair.
+
 ## Build
 
-Requires CMake 3.24+, a C compiler, and the FLAC, Ogg/Vorbis, mpg123 and soxr
+Requires CMake 3.24+, C/C++ compilers (Objective-C++ on macOS), and the FLAC, Ogg/Vorbis, mpg123 and soxr
 development libraries. Dependencies must be installed on machines running these
-development builds. This repository does not yet produce a self-contained app
-installer. If FLAC is missing, CMake can download and build FLAC 1.5.0; set
+development builds. The Tray packaging step below copies runtime libraries
+into a self-contained app/folder. If FLAC is missing, CMake can download and build FLAC 1.5.0; set
 `-DPLAYER_FETCH_FLAC=OFF` to require installed libraries instead.
 
 ### macOS
@@ -43,10 +113,10 @@ With [Homebrew](https://brew.sh/):
 
 ```sh
 brew install cmake flac libvorbis mpg123 libsoxr python
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DPLAYER_BUILD_TRAY=ON
 cmake --build build --parallel
 ctest --test-dir build --output-on-failure
-./build/player --name "My Mac"
+open "build/Lyrion Player.app"
 ```
 
 With [MacPorts](https://www.macports.org/install.php):
@@ -54,12 +124,12 @@ With [MacPorts](https://www.macports.org/install.php):
 ```sh
 sudo port selfupdate
 sudo port install cmake flac libogg libvorbis mpg123 soxr python313
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Release \
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DPLAYER_BUILD_TRAY=ON \
   -DCMAKE_PREFIX_PATH=/opt/local \
   -DPython3_EXECUTABLE=/opt/local/bin/python3.13
 cmake --build build --parallel
 ctest --test-dir build --output-on-failure
-./build/player --name "My Mac"
+open "build/Lyrion Player.app"
 ```
 
 The MacPorts resampler port is named [`soxr`](https://ports.macports.org/port/soxr/).
@@ -76,16 +146,48 @@ Use Visual Studio 2022 with Desktop development with C++, CMake, Python 3, and
 your vcpkg checkout:
 
 ```powershell
-cmake -S . -B build -A x64 "-DCMAKE_TOOLCHAIN_FILE=$env:VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake"
+cmake -S . -B build -A x64 -DPLAYER_BUILD_TRAY=ON "-DCMAKE_TOOLCHAIN_FILE=$env:VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake"
 cmake --build build --config Release --parallel
 ctest --test-dir build --build-config Release --output-on-failure
-.\build\Release\player.exe --name "My PC"
+& ".\build\Release\Lyrion Player.exe"
 ```
 
 The manifest installs codec dependencies. Keep the DLLs that vcpkg copies beside
 `player.exe` with the executable if moving it to another directory.
 
-## Start automatically at sign-in
+### Create a self-contained package
+
+On macOS:
+
+```sh
+cmake --install build --prefix "$PWD/build/package" --component Tray
+open "build/package/Lyrion Player.app"
+```
+
+On Windows:
+
+```powershell
+cmake --install build --config Release --prefix "$PWD/build/package" --component Tray
+& ".\build\package\Lyrion Player.exe"
+```
+
+Distribute the whole package with its licenses and corresponding source. The macOS
+step bundles dylibs, fixes their paths and applies an ad-hoc signature. Developer
+ID signing/notarization and Windows Authenticode signing require release credentials
+and are not configured. These are unsigned development distributions for OS trust
+purposes. CI builds separate macOS ARM64/Intel and Windows x64 ZIP artifacts.
+Dependencies can set a higher minimum OS version than the app itself; use dependency
+builds targeting your oldest supported OS when distributing broadly.
+
+Omit `-DPLAYER_BUILD_TRAY=ON` for the original headless build. Python is only needed
+for tests and the optional legacy macOS registration script.
+
+## Command-line startup (legacy alternative)
+
+The following scripts remain available for headless use. They create individual
+startup entries and are independent of the tray app. For tray-managed instances,
+use the app's Start at sign-in setting and Import flow above instead.
+
 
 The background player runs in your own user session so it follows your audio
 selection. It starts when you sign in, restarts after a crash, and stops when you
@@ -135,6 +237,10 @@ Logs: `%LOCALAPPDATA%\lyrion-player\player.log`. Task Scheduler shows the task a
 network so it can discover/connect to Lyrion.
 
 ## Multiple instances
+
+In the tray app, use Add once per server; identities and child processes are managed
+automatically. All instances follow the same default output, and simultaneous audio
+mixes. The following examples are for manual/headless use.
 
 Run one process per server. Give every instance a distinct name and a stable,
 unique `--mac` identifier. The identifier uses MAC-address notation to identify the
@@ -336,7 +442,7 @@ the default output every two seconds. Buffered playback resumes when a device is
 available. Long outages can affect synchronization with other players; no claim
 of uninterrupted multiroom synchronization is made during device changes.
 The device remains open and produces silence while paused or powered off in
-Lyrion. Automatic log rotation and packaged installers are not included yet.
+Lyrion. Automatic log rotation and installer wizards are not included yet.
 
 ## Validation
 
@@ -360,7 +466,14 @@ Broadcast calculation tests also cover different subnet sizes and reject masks
 without a usable subnet broadcast. For a manual UDP-only check against real
 servers, run `./build/player_discovery_test --probe`; it logs the interface probes
 and first replying server without registering a player or playing audio.
-A CI workflow is provided to run these checks on macOS and Windows.
+Managed-mode tests verify JSON status, graceful stop, stdin EOF, and connected
+shutdown against mock servers. Shared tray tests cover configuration, identities,
+independent lifecycle, bounded restarts and migration failures. Native process tests
+exercise real inherited pipes, independent stop and force termination with the
+silent backend. Native UI smoke tests create the settings/editor controls using a
+temporary profile. Metadata discovery tests collect multiple mock replies. None of
+these tests modify sign-in registrations or import real user services.
+A CI workflow builds/tests/packages the native apps on macOS and Windows.
 
 Physical device switching requires manual validation on both systems:
 
@@ -373,8 +486,8 @@ Physical device switching requires manual validation on both systems:
    adjust volume, and test sleep/wake.
 5. Install startup, sign out/in, verify one player appears, then uninstall startup.
 
-Hardware rerouting and service installation have not been verified by the silent
-tests. See [architecture](docs/architecture.md) for the ownership and recovery model.
+Hardware rerouting, real sign-in registration, and migration of real OS entries
+require manual verification on each target system. See [architecture](docs/architecture.md) for the ownership and recovery model.
 
 ## License and upstream
 
