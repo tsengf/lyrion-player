@@ -25,6 +25,7 @@
 #include "squeezelite.h"
 #include "slimproto.h"
 #include "discovery.h"
+#include "managed.h"
 
 static log_level loglevel;
 
@@ -553,7 +554,7 @@ static void slimproto_run() {
 
 	set_readwake_handles(ehandles, sock, wake_e);
 
-	while (running && !new_server) {
+	while (running && !new_server && !player_managed_stopping()) {
 
 		bool wake = false;
 		event_type ev;
@@ -782,16 +783,17 @@ static void discovery_log(const char *message) {
 in_addr_t discover_server(char *default_server) {
 	in_addr_t address;
 	unsigned port = discovery_port;
+	player_managed_connection("discovering", "", discovery_port);
 	do {
 		LOG_INFO("sending discovery on localhost and active LAN interfaces");
-		address = player_discovery_probe(discovery_port, 5000, discovery_log);
+		address = player_discovery_probe(discovery_port, player_managed_enabled() ? 500 : 5000, discovery_log);
 		if (address) {
 			struct in_addr found;
 			found.s_addr = address;
 			LOG_INFO("got response from: %s:%u", inet_ntoa(found), discovery_port);
 		}
 		if (default_server) server_addr(default_server, &address, &port);
-	} while (!address && running);
+	} while (!address && running && !player_managed_stopping());
 	return address;
 }
 
@@ -813,6 +815,7 @@ void slimproto(log_level level, char *server, u8_t mac[6], const char *name, con
 
 	loglevel = level;
 	running = true;
+	player_managed_start();
 
 #if PLAYER_NULL_AUDIO
 	/* Keep integration discovery tests isolated from real Lyrion servers. */
@@ -886,7 +889,7 @@ void slimproto(log_level level, char *server, u8_t mac[6], const char *name, con
 
 	new_server = 0;
 
-	while (running) {
+	while (running && !player_managed_stopping()) {
 
 		if (new_server) {
 			previous_server = slimproto_ip;
@@ -901,14 +904,18 @@ void slimproto(log_level level, char *server, u8_t mac[6], const char *name, con
 		set_nonblock(sock);
 		set_nosigpipe(sock);
 
-		if (connect_timeout(sock, (struct sockaddr *) &serv_addr, sizeof(serv_addr), 5) != 0) {
+		player_managed_connection("connecting", inet_ntoa(serv_addr.sin_addr), slimproto_port);
+		if (connect_timeout(sock, (struct sockaddr *) &serv_addr, sizeof(serv_addr), player_managed_enabled() ? 1 : 5) != 0) {
 
 			if (previous_server) {
 				slimproto_ip = serv_addr.sin_addr.s_addr = previous_server;
 				LOG_INFO("new server not reachable, reverting to previous server %s:%d", inet_ntoa(serv_addr.sin_addr), ntohs(serv_addr.sin_port));
 			} else {
 				LOG_INFO("unable to connect to server %u", failed_connect);
-				sleep(5);
+				if (player_managed_enabled()) {
+					unsigned wait;
+					for (wait = 0; wait < 50 && !player_managed_stopping(); ++wait) usleep(100000);
+				} else sleep(5);
 			}
 
 			// rediscover server if it was not set at startup
@@ -922,6 +929,7 @@ void slimproto(log_level level, char *server, u8_t mac[6], const char *name, con
 			socklen_t len;
 
 			LOG_INFO("connected");
+			player_managed_connection("connected", inet_ntoa(serv_addr.sin_addr), slimproto_port);
 
 			var_cap[0] = '\0';
 			failed_connect = 0;
@@ -946,6 +954,7 @@ void slimproto(log_level level, char *server, u8_t mac[6], const char *name, con
 			sendHELO(reconnect, fixed_cap, var_cap, mac);
 
 			slimproto_run();
+			player_managed_connection("disconnected", inet_ntoa(serv_addr.sin_addr), slimproto_port);
 
 			if (!reconnect) {
 				reconnect = true;

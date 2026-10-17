@@ -49,7 +49,7 @@ set(PLAYER_SOURCES
   ${SL}/main.c ${SL}/slimproto.c ${SL}/buffer.c ${SL}/stream.c ${SL}/utils.c
   ${SL}/output.c ${SL}/output_stdout.c ${SL}/output_pack.c ${SL}/decode.c
   ${SL}/flac.c ${SL}/pcm.c ${SL}/vorbis.c ${SL}/mpg.c
-  ${SL}/process.c ${SL}/resample.c src/output_native.c src/native_audio.c src/discovery.c)
+  ${SL}/process.c ${SL}/resample.c src/output_native.c src/native_audio.c src/discovery.c src/managed.c)
 if(WIN32)
   list(APPEND PLAYER_SOURCES src/windows_default.c)
 endif()
@@ -78,6 +78,7 @@ endfunction()
 player_target(player)
 if(WIN32)
   target_sources(player PRIVATE src/windows_entry.c)
+  target_link_libraries(player PRIVATE shell32)
   set_target_properties(player PROPERTIES WIN32_EXECUTABLE TRUE)
 endif()
 install(TARGETS player RUNTIME DESTINATION bin)
@@ -90,6 +91,8 @@ if(PLAYER_BUILD_TESTS)
   find_package(Python3 COMPONENTS Interpreter REQUIRED)
   add_test(NAME player_integration COMMAND ${Python3_EXECUTABLE}
     ${CMAKE_CURRENT_SOURCE_DIR}/tests/integration.py $<TARGET_FILE:player_test_audio>)
+  add_test(NAME player_managed COMMAND ${Python3_EXECUTABLE}
+    ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_managed.py $<TARGET_FILE:player_test_audio>)
   add_test(NAME player_service COMMAND ${Python3_EXECUTABLE}
     ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_service.py)
   add_executable(player_discovery_test tests/test_discovery.c src/discovery.c)
@@ -99,6 +102,8 @@ if(PLAYER_BUILD_TESTS)
     target_compile_definitions(player_discovery_test PRIVATE _CRT_SECURE_NO_WARNINGS)
   endif()
   add_test(NAME player_discovery COMMAND player_discovery_test)
+  add_test(NAME player_discovery_scan COMMAND ${Python3_EXECUTABLE}
+    ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_discovery_scan.py $<TARGET_FILE:player_discovery_test>)
   if(WIN32)
     find_program(PLAYER_POWERSHELL NAMES pwsh powershell REQUIRED)
     add_test(NAME player_windows_service COMMAND ${PLAYER_POWERSHELL}

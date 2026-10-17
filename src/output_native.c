@@ -3,6 +3,7 @@
  */
 #include "squeezelite.h"
 #include "native_audio.h"
+#include "managed.h"
 
 static log_level loglevel;
 static u8_t *write_pointer;
@@ -66,9 +67,10 @@ static void pull_audio(void *samples, unsigned frames, unsigned latency)
     mutex_unlock(outputbuf->mutex);
 }
 
-static void audio_status(const char *message)
+static void audio_status(const char *message, int available)
 {
     LOG_INFO("%s", message);
+    player_managed_audio(available);
 }
 
 void output_init_pa(log_level level, const char *device, unsigned buffer_size,

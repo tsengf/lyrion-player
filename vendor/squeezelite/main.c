@@ -23,6 +23,7 @@
  */
 
 #include "squeezelite.h"
+#include "managed.h"
 
 #include <signal.h>
 
@@ -386,6 +387,16 @@ int main(int argc, char **argv) {
 	}
 
 	while (optind < argc && strlen(argv[optind]) >= 2 && argv[optind][0] == '-') {
+		if (!strcmp(argv[optind], "--managed")) {
+			player_managed_enable();
+			++optind;
+			continue;
+		}
+		if (!strcmp(argv[optind], "--print-mac")) {
+			get_mac(mac);
+			printf("%02x:%02x:%02x:%02x:%02x:%02x\n", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+			return is_mac_nz(mac) ? 0 : 1;
+		}
 		char *opt = player_option(argv[optind] + 1);
 		if (strstr("oabcCdefmMnNpPrsZ"
 #if ALSA
@@ -807,6 +818,10 @@ int main(int argc, char **argv) {
 #endif
 
 	stream_init(log_stream, stream_buf_size);
+	if (player_managed_enabled() && !strcmp(output_device, "-")) {
+		fprintf(stderr, "--managed cannot use diagnostic stdout audio\n");
+		return 1;
+	}
 
 	if (!strcmp(output_device, "-")) {
 		output_init_stdout(log_output, output_buf_size, output_params, rates, rate_delay);
@@ -877,6 +892,7 @@ int main(int argc, char **argv) {
 	}
 
 	slimproto(log_slimproto, server, mac, name, namefile, modelname, maxSampleRate);
+	player_managed_connection("stopped", "", 0);
 
 	decode_close();
 	stream_close();

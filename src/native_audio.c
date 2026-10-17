@@ -70,7 +70,7 @@ static ma_thread_result worker(void *unused)
     while (!ma_atomic_load_32(&audio.quit)) {
 #if defined(PLAYER_NULL_AUDIO)
         if (!reported_samples && ma_atomic_load_32(&audio.nonzero_samples)) {
-            audio.status("Test backend received nonzero PCM samples");
+            audio.status("Test backend received nonzero PCM samples", -1);
             reported_samples = 1;
         }
 #endif
@@ -78,18 +78,18 @@ static ma_thread_result worker(void *unused)
         if (!monitor) {
             if (monitor_retry-- <= 0) {
                 monitor = player_default_monitor_create();
-                if (!monitor) audio.status("Cannot monitor the default audio output; retrying");
+                if (!monitor) audio.status("Cannot monitor the default audio output; retrying", 0);
                 monitor_retry = 20;
             }
             if (!monitor) { ma_sleep(100); continue; }
         }
         if (player_default_monitor_changed(monitor)) {
-            audio.status("System default output changed; reopening on the audio worker");
+            audio.status("System default output changed; reopening on the audio worker", -1);
             ma_atomic_store_32(&audio.recover, 1);
         }
 #endif
         if (ma_atomic_exchange_32(&audio.rerouted, 0))
-            audio.status("Audio now follows the new system default output");
+            audio.status("Audio now follows the new system default output", 1);
         if (ma_atomic_exchange_32(&audio.recover, 0) && initialized) {
             ma_device_uninit(&audio.device);
             /* Uninit may itself emit stopped; discard that intentional stop. */
@@ -126,10 +126,10 @@ static ma_thread_result worker(void *unused)
                 }
             }
             if (initialized) {
-                audio.status("Playing through the system default output (shared mode)");
+                audio.status("Playing through the system default output (shared mode)", 1);
                 reported_failure = 0;
             } else if (!reported_failure) {
-                audio.status("No usable audio output; retrying every 2 seconds");
+                audio.status("No usable audio output; retrying every 2 seconds", 0);
                 reported_failure = 1;
             }
             retry_ticks = 20;
