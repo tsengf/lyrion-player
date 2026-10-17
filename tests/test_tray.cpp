@@ -1,0 +1,111 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+#include "core.hpp"
+#include <fstream>
+#include <iostream>
+#include <functional>
+
+namespace {
+tray::fs::path root;
+struct FakeState { bool running = true, stopped = false, killed = false; int code = 0; std::string output; };
+std::vector<std::shared_ptr<FakeState>> children;
+std::vector<std::vector<std::string>> arguments;
+bool removalFails = false;
+class FakeChild : public tray::Child {
+    std::shared_ptr<FakeState> state;
+public:
+    explicit FakeChild(std::shared_ptr<FakeState> s) : state(std::move(s)) {}
+    bool alive() override { return state->running; }
+    int exitCode() override { return state->code; }
+    std::string read() override { auto value=state->output;state->output.clear();return value; }
+    void stop() override { state->stopped=true;state->running=false; }
+    void kill() override { state->killed=true;state->running=false; }
+};
+void require(bool value, const char *message) { if(!value)throw std::runtime_error(message); }
+void fails(const std::function<void()> &fn) { bool caught=false;try{fn();}catch(...){caught=true;}require(caught,"Expected validation failure"); }
+}
+namespace tray::platform {
+fs::path configDir(){return root/"config";}
+fs::path logDir(){return root/"logs";}
+fs::path backend(){return root/"player";}
+void replaceFile(const fs::path &a,const fs::path &b){if(fs::exists(b))fs::remove(b);fs::rename(a,b);}
+void openFile(const fs::path &){}
+void openURL(const std::string &){}
+std::string loginStatus(){return "off";}
+void setLogin(bool){}
+std::vector<Legacy> legacyServices(){return {};}
+void removeLegacy(const Legacy &){if(removalFails)throw std::runtime_error("test failure");}
+std::unique_ptr<Child> spawn(const fs::path &,const std::vector<std::string> &args,const fs::path &){
+    auto child=std::make_shared<FakeState>();
+    arguments.push_back(args);children.push_back(child);
+    return std::make_unique<FakeChild>(child);
+}
+}
+int main() {
+    root=tray::fs::temp_directory_path()/("lyrion-core-test-"+tray::newId());
+    try {
+        tray::Manager manager;
+        auto a=manager.draft(),b=manager.draft();a.name="Music & Unicode 🎵";a.host="192.168.1.9";
+        require(a.id!=b.id&&a.mac!=b.mac,"Generated identities collide");
+        manager.save(a);manager.save(b);
+        auto decoded=tray::decodeConfig(tray::encodeConfig(manager.instances));
+        require(decoded.size()==2&&decoded[0].name==a.name,"Configuration did not round-trip");
+        b.mac=a.mac;fails([&]{manager.save(b);});b=decoded[1];
+        auto invalid=a;invalid.host="http://192.168.1.9";fails([&]{tray::validate(invalid);});
+        invalid=a;invalid.port=70000;fails([&]{tray::validate(invalid);});
+        invalid=a;invalid.mac="01:00:00:00:00:01";fails([&]{tray::validate(invalid);});
+        fails([]{tray::parsePort("4294970779");});
+        fails([]{tray::parsePort("-1");});
+        manager.startAll();
+        require(children.size()==2,"Did not start both instances");
+        require(arguments[0][0]=="--managed","Backend is not owned by tray");
+        children[0]->output="{\"version\":1,\"type\":\"connection\",\"state\":\"connected\",\"host\":\"192.168.1.9\",\"port\":3483}\n";
+        manager.tick();
+        require(manager.status(a.id)=="Connected","Connection event not reflected in UI model");
+        require(manager.url(a.id)=="http://192.168.1.9:9000","Incorrect browser URL");
+        children[0]->output="{\"version\":1,\"type\":\"audio\",\"state\":\"unavailable\"}\n";
+        manager.tick();require(manager.status(a.id).find("audio unavailable")!=std::string::npos,"Audio state missing");
+        manager.stop(a.id);manager.tick();
+        require(children[0]->stopped&&children[1]->running,"Stopping one affected the other");
+        b.name="Updated";manager.save(b);manager.tick();
+        require(children.size()==3&&!children[1]->running&&children[2]->running,"Editing did not restart only that instance");
+        require(children[0]->stopped,"Editing restarted a stopped instance");
+        children[2]->running=false;children[2]->code=1;manager.tick();
+        require(manager.status(b.id)=="Restarting","Unexpected exit was not retried");
+        manager.runtime[b.id].retry=std::chrono::steady_clock::now();manager.tick();
+        require(children.back()->running,"Retry did not launch a new process");
+        // Exhausting the restart budget leaves only that instance in Error.
+        for(int failure=0;failure<3;++failure){
+            children.back()->running=false;manager.tick();
+            manager.runtime[b.id].retry=std::chrono::steady_clock::now();manager.tick();
+        }
+        require(manager.status(b.id).find("Error")==0&&!manager.runtime[b.id].desired,"Repeated crashes were not bounded");
+        manager.start(b.id);
+        manager.quit();manager.tick();
+        require(manager.stopped()&&children.back()->stopped,"Quit left a child running");
+
+        auto legacy=tray::parseLegacy("entry","Legacy",{"player","-n","Existing","-s","192.168.1.8:3484","-m","02:00:00:00:ff:01"});
+        require(legacy.error.empty()&&legacy.port==3484,"Legacy parameters were not parsed");
+        require(!tray::parseLegacy("e","x",{"player","--unknown","x"}).error.empty(),"Unknown legacy options were lost");
+        {
+            tray::Manager imported(root/"imported");
+            removalFails=true;fails([&]{imported.importLegacy(legacy);});
+            require(imported.instances.size()==1&&!imported.instances[0].autoStart&&imported.stopped(),"Failed migration started a duplicate");
+            imported.start(imported.instances[0].id);require(imported.stopped(),"Incomplete import allowed a duplicate player");
+            removalFails=false;imported.importLegacy(legacy);
+            require(imported.instances.size()==1,"Retry duplicated the imported draft");
+            require(imported.instances[0].mac==legacy.mac&&children.back()->running,"Import lost player identity");
+        }
+        {
+            auto bad=root/"invalid";tray::fs::create_directories(bad);
+            std::ofstream(bad/"config.json")<<"invalid";
+            tray::Manager preserved(bad);require(!preserved.error.empty(),"Corrupt configuration was silently reset");
+            fails([&]{preserved.save(preserved.draft());});
+            std::ifstream file(bad/"config.json");std::string value;file>>value;require(value=="invalid","Corrupt configuration was overwritten");
+        }
+        tray::fs::remove_all(root);
+        std::cout<<"Tray configuration, lifecycle and migration tests passed\n";
+        return 0;
+    }catch(const std::exception &e){
+        tray::fs::remove_all(root);std::cerr<<e.what()<<"\n";return 1;
+    }
+}
