@@ -2,21 +2,50 @@ name: Build and test
 on: [push, pull_request]
 jobs:
   macos:
-    runs-on: macos-latest
+    strategy:
+      matrix:
+        include:
+          - runner: macos-15
+            arch: arm64
+          - runner: macos-15-intel
+            arch: x86_64
+    runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v4
       - run: brew install flac libvorbis mpg123 libsoxr
-      - run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+      - run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DPLAYER_BUILD_TRAY=ON -DCMAKE_OSX_DEPLOYMENT_TARGET=13.0
       - run: cmake --build build --parallel
       - run: ctest --test-dir build --output-on-failure
+      - run: cmake --install build --prefix "$PWD/build/package" --component Tray
+      - name: Check standalone application
+        run: |
+          codesign --verify --deep --strict "build/package/Lyrion Player.app"
+          "build/package/Lyrion Player.app/Contents/MacOS/Lyrion Player" --smoke-test
+          "build/package/Lyrion Player.app/Contents/MacOS/player" --help
+      - run: ditto -c -k --sequesterRsrc build/package lyrion-player-macos-${{ matrix.arch }}.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: lyrion-player-macos-${{ matrix.arch }}
+          path: lyrion-player-macos-${{ matrix.arch }}.zip
   windows:
-    runs-on: windows-latest
+    runs-on: windows-2022
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: '3.x'
       - shell: pwsh
-        run: cmake -S . -B build -A x64 "-DCMAKE_TOOLCHAIN_FILE=$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake"
+        run: cmake -S . -B build -A x64 -DPLAYER_BUILD_TRAY=ON "-DCMAKE_TOOLCHAIN_FILE=$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake"
       - run: cmake --build build --config Release --parallel
       - run: ctest --test-dir build -C Release --output-on-failure
+      - run: cmake --install build --config Release --prefix "${{ github.workspace }}/build/package" --component Tray
+      - name: Check standalone application
+        shell: pwsh
+        run: |
+          $process = Start-Process -FilePath '.\build\package\Lyrion Player.exe' -ArgumentList '--smoke-test' -Wait -PassThru
+          if ($process.ExitCode -ne 0) { throw 'Packaged tray smoke test failed' }
+          Compress-Archive -Path build/package/* -DestinationPath lyrion-player-windows-x64.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: lyrion-player-windows-x64
+          path: lyrion-player-windows-x64.zip

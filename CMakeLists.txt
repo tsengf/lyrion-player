@@ -115,6 +115,16 @@ if(PLAYER_BUILD_TRAY)
     add_custom_command(TARGET lyrion-player-tray POST_BUILD
       COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:player>
         "$<TARGET_BUNDLE_CONTENT_DIR:lyrion-player-tray>/MacOS/player")
+    install(TARGETS lyrion-player-tray BUNDLE DESTINATION . COMPONENT Tray)
+    install(CODE [[
+      include(BundleUtilities)
+      set(tray_app "$ENV{DESTDIR}${CMAKE_INSTALL_PREFIX}/Lyrion Player.app")
+      fixup_bundle("${tray_app}" "${tray_app}/Contents/MacOS/player" "")
+      execute_process(COMMAND /usr/bin/codesign --force --deep --sign - "${tray_app}" RESULT_VARIABLE signing)
+      if(NOT signing EQUAL 0)
+        message(FATAL_ERROR "Ad-hoc signing failed")
+      endif()
+    ]] COMPONENT Tray)
   else()
     target_link_libraries(player_tray_core PUBLIC ws2_32 iphlpapi)
     target_compile_definitions(player_tray_core PRIVATE _CRT_SECURE_NO_WARNINGS)
@@ -122,8 +132,21 @@ if(PLAYER_BUILD_TRAY)
     target_compile_definitions(lyrion-player-tray PRIVATE UNICODE _UNICODE _WIN32_WINNT=0x0A00 _CRT_SECURE_NO_WARNINGS)
     target_link_libraries(lyrion-player-tray PRIVATE player_tray_core comctl32 shell32 user32 gdi32 advapi32 ole32 oleaut32 taskschd uuid)
     set_target_properties(lyrion-player-tray PROPERTIES OUTPUT_NAME "Lyrion Player")
+    install(TARGETS lyrion-player-tray player RUNTIME_DEPENDENCY_SET tray_runtime
+      RUNTIME DESTINATION . COMPONENT Tray)
+    install(RUNTIME_DEPENDENCY_SET tray_runtime
+      DIRECTORIES "$<TARGET_FILE_DIR:player>"
+      PRE_EXCLUDE_REGEXES "api-ms-.*" "ext-ms-.*"
+      POST_EXCLUDE_REGEXES ".*[\\/]([Ww]indows)[\\/]([Ss]ystem32)[\\/].*"
+      RUNTIME DESTINATION . COMPONENT Tray)
+    set(CMAKE_INSTALL_SYSTEM_RUNTIME_DESTINATION .)
+    set(CMAKE_INSTALL_SYSTEM_RUNTIME_COMPONENT Tray)
+    include(InstallRequiredSystemLibraries)
   endif()
   add_dependencies(lyrion-player-tray player)
+  install(FILES LICENSE COPYING THIRD_PARTY.md vendor/json/LICENSE.MIT DESTINATION licenses COMPONENT Tray)
+  install(DIRECTORY vendor/licenses/ DESTINATION licenses/codecs COMPONENT Tray)
+  install(FILES vendor/miniaudio/miniaudio.h DESTINATION licenses/miniaudio COMPONENT Tray)
 endif()
 
 option(PLAYER_BUILD_TESTS "Build silent test player and integration checks" ON)
