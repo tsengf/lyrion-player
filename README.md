@@ -37,7 +37,7 @@ and codec libraries; users do not need Python, Homebrew, MacPorts, or vcpkg.
 1. On macOS, copy **Lyrion Player.app** from the package into Applications and
    open it. On Windows, extract the entire package into a permanent folder and
    open **Lyrion Player.exe**, keeping `player.exe` and all DLLs beside it.
-2. Open **Instances…** from the menu-bar/tray icon, then choose **Add…**. Enter a
+2. Open **Settings…** from the menu-bar/tray icon, then choose **Add…**. Enter a
    player name and select **Automatic**, a discovered server, or **Manual address**.
    Use **Scan servers** to refresh the discovered list. Manual addresses use a
    separate SlimProto port, normally `3483`.
@@ -49,12 +49,12 @@ and codec libraries; users do not need Python, Homebrew, MacPorts, or vcpkg.
 
 **Only the tray app is registered at sign-in.** It owns the player child
 processes; instances have no individual LaunchAgents, scheduled tasks, or Windows
-services. Closing the Instances window keeps playback running. **Quit Lyrion
+services. Closing the Settings window keeps playback running. **Quit Lyrion
 Player** stops every managed player before exiting. Sign-in startup runs in your
 user session so playback follows the selected output device.
 
 The tray menu provides per-instance Start/Stop, Edit, View Log, and Open Lyrion,
-plus Start All and Stop All. The Instances window shows connection and audio
+plus Start All and Stop All. The Settings window shows connection and audio
 availability. Editing a running instance restarts only that instance. Unexpected
 player exits retry after 1, 2 and 4 seconds; another failure within a minute leaves
 that instance in Error until you start it again. Closing or crashing the tray app
@@ -76,7 +76,7 @@ no administrator privileges are needed.
 
 ### Import existing startup entries
 
-Choose **Import…** in Instances to migrate entries created by `service.py` or
+Choose **Import…** in Settings to migrate entries created by `service.py` or
 `service.ps1` for your current user. Review each confirmation: it preserves the
 player name, server and ID, backs up the old registration, stops/removes that
 registration, then starts the instance under the tray app. If an old entry omitted

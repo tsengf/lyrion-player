@@ -171,7 +171,7 @@ struct App {
         refresh();
     }
     void menu() {
-        HMENU menu=CreatePopupMenu();menuActions.clear();AppendMenuW(menu,MF_STRING,EDIT,L"Instances...");
+        HMENU menu=CreatePopupMenu();menuActions.clear();AppendMenuW(menu,MF_STRING,EDIT,L"Settings...");
         for(size_t row=0;row<manager->instances.size();++row){
             const auto &i=manager->instances[row];HMENU sub=CreatePopupMenu();
             std::wstring labels[]={manager->runtime[i.id].desired?L"Stop":L"Start",L"Open Lyrion",L"View Log",L"Edit..."};
@@ -258,7 +258,7 @@ int WINAPI wWinMain(HINSTANCE instance,HINSTANCE,LPWSTR command,int) {
         WNDCLASSEXW cls{sizeof(cls)};cls.hInstance=instance;cls.hCursor=LoadCursorW(nullptr,IDC_ARROW);cls.hbrBackground=(HBRUSH)(COLOR_WINDOW+1);cls.hIcon=LoadIconW(nullptr,IDI_APPLICATION);
         cls.lpszClassName=MAIN_CLASS;cls.lpfnWndProc=MainProc;RegisterClassExW(&cls);
         cls.lpszClassName=EDITOR_CLASS;cls.lpfnWndProc=EditorProc;RegisterClassExW(&cls);
-        app.window=CreateWindowExW(0,MAIN_CLASS,L"Lyrion Player - Instances",WS_OVERLAPPED|WS_CAPTION|WS_SYSMENU|WS_MINIMIZEBOX,
+        app.window=CreateWindowExW(0,MAIN_CLASS,L"Lyrion Player - Settings",WS_OVERLAPPED|WS_CAPTION|WS_SYSMENU|WS_MINIMIZEBOX,
             CW_USEDEFAULT,CW_USEDEFAULT,app.px(820),app.px(465),nullptr,nullptr,instance,&app);
         if(!app.window)throw std::runtime_error("Could not create tray settings window");
         app.build();app.refresh();

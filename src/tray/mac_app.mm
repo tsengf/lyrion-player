@@ -93,7 +93,7 @@ static std::string U(NSString *s) { return s ? std::string(s.UTF8String) : ""; }
     settings = [[NSWindow alloc] initWithContentRect:NSMakeRect(0,0,820,430)
         styleMask:NSWindowStyleMaskTitled | NSWindowStyleMaskClosable | NSWindowStyleMaskMiniaturizable | NSWindowStyleMaskResizable
         backing:NSBackingStoreBuffered defer:NO];
-    settings.title = @"Lyrion Player — Instances"; settings.releasedWhenClosed = NO;
+    settings.title = @"Lyrion Player — Settings"; settings.releasedWhenClosed = NO;
     [settings center];
     NSView *view = settings.contentView;
     NSScrollView *scroll = [[NSScrollView alloc] initWithFrame:NSMakeRect(20,120,780,285)];
@@ -242,7 +242,7 @@ static std::string U(NSString *s) { return s ? std::string(s.UTF8String) : ""; }
     if (menuOpen) return;
     NSMenu *menu = [NSMenu new];
     menu.delegate = self;
-    NSMenuItem *configure = [menu addItemWithTitle:@"Instances…" action:@selector(openSettings:) keyEquivalent:@","];
+    NSMenuItem *configure = [menu addItemWithTitle:@"Settings…" action:@selector(openSettings:) keyEquivalent:@","];
     configure.target = self;
     for (const auto &i : manager->instances) {
         NSMenuItem *entry = [menu addItemWithTitle:S(i.name+" — "+manager->status(i.id)) action:nil keyEquivalent:@""];
