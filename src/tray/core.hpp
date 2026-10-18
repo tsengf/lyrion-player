@@ -32,6 +32,8 @@ std::vector<Instance> decodeConfig(const std::string &);
 class Manager {
     fs::path directory;
     std::future<std::vector<Server>> scanTask;
+    bool automaticScanning = false;
+    std::chrono::steady_clock::time_point nextScan{};
     std::shared_ptr<std::atomic_bool> scanCancel = std::make_shared<std::atomic_bool>(false);
     void launch(const Instance &, Runtime &);
     void persist(const std::vector<Instance> &);

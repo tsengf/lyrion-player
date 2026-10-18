@@ -109,9 +109,9 @@ static std::string U(NSString *s) { return s ? std::string(s.UTF8String) : ""; }
     table.delegate = self; table.dataSource = self; table.rowHeight = 27;
     table.target = self; table.doubleAction = @selector(editInstance:);
     scroll.documentView = table; [view addSubview:scroll];
-    NSArray *labels = @[@"Add…", @"Edit…", @"Remove", @"Start / Stop", @"Import…", @"Scan servers"];
+    NSArray *labels = @[@"Add…", @"Edit…", @"Remove", @"Start / Stop", @"Import…"];
     SEL actions[] = {@selector(addInstance:), @selector(editInstance:), @selector(removeInstance:),
-        @selector(toggleSelected:), @selector(importInstances:), @selector(scanServers:)};
+        @selector(toggleSelected:), @selector(importInstances:)};
     for (NSUInteger i=0; i<labels.count; ++i)
         [self button:labels[i] action:actions[i] frame:NSMakeRect(20+i*127,78,120,30) in:view];
     login = [NSButton checkboxWithTitle:@"Start at sign-in" target:self action:@selector(changeLogin:)];
@@ -142,7 +142,6 @@ static std::string U(NSString *s) { return s ? std::string(s.UTF8String) : ""; }
         }
     } catch (const std::exception &e) { [self alert:S(e.what())]; }
 }
-- (void)scanServers:(id)sender { manager->scan(); }
 - (void)addInstance:(id)sender { [self showEditor:manager->draft()]; }
 - (void)editInstance:(id)sender { if (auto i = manager->find(U([self selected]))) [self showEditor:*i]; }
 - (NSTextField *)field:(NSString *)label value:(const std::string &)value y:(CGFloat)y view:(NSView *)view {
@@ -186,7 +185,6 @@ static std::string U(NSString *s) { return s ? std::string(s.UTF8String) : ""; }
     autoStart = [NSButton checkboxWithTitle:@"Start this instance with the app" target:nil action:nil];
     autoStart.frame = NSMakeRect(175,100,360,25); autoStart.state = editing.autoStart ? NSControlStateValueOn : NSControlStateValueOff;
     [view addSubview:autoStart];
-    [self button:@"Scan servers" action:@selector(scanServers:) frame:NSMakeRect(20,35,130,30) in:view];
     [self button:@"Cancel" action:@selector(cancelEditor:) frame:NSMakeRect(315,35,100,30) in:view];
     NSButton *save = [self button:@"Save" action:@selector(saveEditor:) frame:NSMakeRect(435,35,100,30) in:view];
     save.keyEquivalent = @"\r";

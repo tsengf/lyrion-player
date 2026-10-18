@@ -251,7 +251,9 @@ void Manager::tick() {
     if (scanning && scanTask.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
         try { servers = scanTask.get(); } catch (...) { servers.clear(); }
         scanning = false;
+        nextScan = now + std::chrono::seconds(15);
     }
+    if (automaticScanning && !scanning && !quitting && now >= nextScan) scan();
 }
 struct ScanContext { std::vector<Server> servers; std::shared_ptr<std::atomic_bool> cancel; };
 static void scanResult(const player_discovered_server *found, void *opaque) {
@@ -265,6 +267,7 @@ static void scanResult(const player_discovered_server *found, void *opaque) {
 }
 void Manager::scan() {
     if (scanning || quitting) return;
+    automaticScanning = true;
     scanning = true; *scanCancel = false;
     auto cancel = scanCancel;
     scanTask = std::async(std::launch::async, [cancel] {

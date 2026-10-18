@@ -22,8 +22,8 @@ std::string text(HWND control) {
     std::wstring value(GetWindowTextLengthW(control)+1, L'\0');
     int count = GetWindowTextW(control, value.data(), (int)value.size()); value.resize(count); return U(value);
 }
-enum { ADD=101, EDIT, REMOVE, TOGGLE, IMPORT, SCAN, LOGIN, CONFIG, START_ALL, STOP_ALL, QUIT,
-       SAVE=201, CANCEL, CHOICE, EDITOR_SCAN };
+enum { ADD=101, EDIT, REMOVE, TOGGLE, IMPORT, LOGIN, CONFIG, START_ALL, STOP_ALL, QUIT,
+       SAVE=201, CANCEL, CHOICE };
 constexpr UINT TRAY_MESSAGE = WM_APP+1, ACTIVATE_MESSAGE = WM_APP+2;
 constexpr wchar_t MAIN_CLASS[] = L"LyrionPlayerTrayWindow", EDITOR_CLASS[] = L"LyrionPlayerInstanceEditor";
 struct App {
@@ -66,8 +66,8 @@ struct App {
         ListView_SetExtendedListViewStyle(table,LVS_EX_FULLROWSELECT|LVS_EX_DOUBLEBUFFER);
         const wchar_t *columns[]={L"Player",L"Server",L"Status"};
         for(int i=0;i<3;++i){ LVCOLUMNW column{};column.mask=LVCF_TEXT|LVCF_WIDTH;column.pszText=const_cast<LPWSTR>(columns[i]);column.cx=px(i==2?300:220);ListView_InsertColumn(table,i,&column); }
-        const wchar_t *labels[]={L"Add...",L"Edit...",L"Remove",L"Start / Stop",L"Import...",L"Scan servers"};
-        for(int i=0;i<6;++i) control(window,WC_BUTTONW,labels[i],WS_TABSTOP,ADD+i,16+i*128,302,120,30);
+        const wchar_t *labels[]={L"Add...",L"Edit...",L"Remove",L"Start / Stop",L"Import..."};
+        for(int i=0;i<5;++i) control(window,WC_BUTTONW,labels[i],WS_TABSTOP,ADD+i,16+i*128,302,120,30);
         login=control(window,WC_BUTTONW,L"Start at sign-in",WS_TABSTOP|BS_AUTOCHECKBOX,LOGIN,16,348,170,26);
         control(window,WC_BUTTONW,L"Open configuration folder",WS_TABSTOP,CONFIG,200,346,220,30);
         summary=control(window,WC_STATICW,L"",0,2,16,389,770,24);
@@ -133,7 +133,6 @@ struct App {
         mac=field(L"Player ID (advanced)",editing.mac,192);web=field(L"Web URL (optional)",editing.webURL,234);
         start=control(editor,WC_BUTTONW,L"Start this instance with the app",WS_TABSTOP|BS_AUTOCHECKBOX,0,180,278,365,26);
         SendMessageW(start,BM_SETCHECK,editing.autoStart?BST_CHECKED:BST_UNCHECKED,0);
-        control(editor,WC_BUTTONW,L"Scan servers",WS_TABSTOP,EDITOR_SCAN,16,335,130,30);
         control(editor,WC_BUTTONW,L"Cancel",WS_TABSTOP,CANCEL,330,335,100,30);
         control(editor,WC_BUTTONW,L"Save",WS_TABSTOP|BS_DEFPUSHBUTTON,SAVE,445,335,100,30);
         choose();EnableWindow(window,FALSE);ShowWindow(editor,SW_SHOW);SetFocus(name);
@@ -161,7 +160,6 @@ struct App {
         else if(command==EDIT){if(auto i=manager->find(id))edit(*i);}
         else if(command==REMOVE){if(auto i=manager->find(id))if(confirm("Remove "+i->name+"? Its player will stop; logs will be retained."))manager->remove(id);}
         else if(command==TOGGLE){if(manager->find(id)){if(manager->runtime[id].desired)manager->stop(id);else manager->start(id);}}
-        else if(command==SCAN)manager->scan();
         else if(command==IMPORT)import();
         else if(command==LOGIN)tray::platform::setLogin(SendMessageW(login,BM_GETCHECK,0,0)==BST_CHECKED);
         else if(command==CONFIG){tray::fs::create_directories(tray::platform::configDir());tray::platform::openFile(tray::platform::configDir());}
@@ -203,7 +201,6 @@ LRESULT CALLBACK EditorProc(HWND window,UINT message,WPARAM w,LPARAM l) {
             if(LOWORD(w)==SAVE)app->save();
             if(LOWORD(w)==CANCEL)app->closeEditor();
             if(LOWORD(w)==CHOICE&&HIWORD(w)==CBN_SELCHANGE)app->choose();
-            if(LOWORD(w)==EDITOR_SCAN)app->manager->scan();
             return 0;
         }
     }catch(const std::exception &e){app->error(e.what());return 0;}
