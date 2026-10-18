@@ -34,6 +34,10 @@ Requires macOS 13 or later (Apple Silicon or Intel), or Windows 10 or later (x64
 Build the app using the instructions below. Packaged builds include the backend
 and codec libraries; users do not need Python, Homebrew, MacPorts, or vcpkg.
 
+![Lyrion Player Settings on macOS](docs/images/settings-macos.png)
+
+*Settings on macOS with fictional player names and example IP addresses.*
+
 1. On macOS, copy **Lyrion Player.app** from the package into Applications and
    open it. On Windows, extract the entire package into a permanent folder and
    open **Lyrion Player.exe**, keeping `player.exe` and all DLLs beside it.
