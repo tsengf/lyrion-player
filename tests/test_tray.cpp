@@ -57,6 +57,9 @@ int main() {
         fails([]{tray::parsePort("-1");});
         require(manager.serverAddress(a.id)=="192.168.1.9:3483","Manual server address missing");
         require(manager.serverAddress(b.id).empty(),"Automatic server appeared before discovery");
+        require(manager.automaticServer(b.id).host.empty(),"Automatic preview invented a server");
+        manager.servers.push_back({"First server","192.168.1.99","first",3483,9001});
+        require(manager.automaticServer(b.id).host=="192.168.1.99","Automatic preview ignored discovered server");
         manager.startAll();
         require(children.size()==2,"Did not start both instances");
         require(arguments[0][0]=="--managed","Backend is not owned by tray");
@@ -66,6 +69,9 @@ int main() {
         require(manager.url(a.id)=="http://192.168.1.9:9000","Incorrect browser URL");
         children[1]->output="{\"version\":1,\"type\":\"connection\",\"state\":\"connected\",\"host\":\"192.168.1.20\",\"port\":3483}\n";
         manager.tick();require(manager.serverAddress(b.id)=="192.168.1.20:3483","Discovered IP and port missing");
+        require(manager.automaticServer(b.id).host=="192.168.1.20","Automatic preview ignored active player endpoint");
+        require(manager.automaticServer(a.id).host=="192.168.1.99","Switching manual player to Automatic reused its fixed address");
+        require(manager.find(b.id)->host.empty(),"Automatic preview pinned discovery to a fixed server");
         children[1]->output="{\"version\":1,\"type\":\"connection\",\"state\":\"connected\",\"host\":\"192.168.1.21\",\"port\":3484}\n";
         manager.tick();require(manager.serverAddress(b.id)=="192.168.1.21:3484","Changed discovered IP and port missing");
         children[1]->output="{\"version\":1,\"type\":\"connection\",\"state\":\"discovering\",\"host\":\"\",\"port\":3483}\n";

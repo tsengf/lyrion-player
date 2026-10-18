@@ -60,6 +60,7 @@ public:
     fs::path logPath(const std::string &) const;
     std::string status(const std::string &) const;
     std::string serverAddress(const std::string &) const;
+    Server automaticServer(const std::string &) const;
     std::string url(const std::string &) const;
     void scan();
     void importLegacy(Legacy);

@@ -120,9 +120,16 @@ struct App {
         for(auto &s:editorServers){auto title=W(s.name+" ("+s.host+")");SendMessageW(choice,CB_ADDSTRING,0,(LPARAM)title.c_str());}
         SendMessageW(choice,CB_SETCURSEL,previous>=0&&previous<(LRESULT)editorServers.size()+2?previous:0,0);
     }
+    void updateAutomaticServer() {
+        auto server=manager->automaticServer(editing.id);
+        SetWindowTextW(host,W(server.host).c_str());
+        SendMessageW(host,EM_SETCUEBANNER,TRUE,(LPARAM)L"Discovering server...");
+        SetWindowTextW(port,W(std::to_string(server.port)).c_str());editing.webPort=server.webPort;
+    }
     void choose() {
         auto index=SendMessageW(choice,CB_GETCURSEL,0,0);
-        if(index==0) SetWindowTextW(host,L"");
+        if(index==0)updateAutomaticServer();
+        else SendMessageW(host,EM_SETCUEBANNER,TRUE,(LPARAM)L"Hostname or IPv4 address");
         if(index>=2&&index-2<(LRESULT)editorServers.size()){
             auto &s=editorServers[index-2];SetWindowTextW(host,W(s.host).c_str());SetWindowTextW(port,W(std::to_string(s.port)).c_str());editing.webPort=s.webPort;
         }
@@ -171,7 +178,9 @@ struct App {
         choose();EnableWindow(window,FALSE);ShowWindow(editor,SW_SHOW);SetFocus(name);
     }
     void save() {
-        auto value=editing;value.name=text(name);value.host=text(host);value.mac=text(mac);value.webURL=text(web);
+        auto value=editing;value.name=text(name);
+        value.host=SendMessageW(choice,CB_GETCURSEL,0,0)==0?"":text(host);
+        value.mac=text(mac);value.webURL=text(web);
         value.port=tray::parsePort(text(port));value.autoStart=SendMessageW(start,BM_GETCHECK,0,0)==BST_CHECKED;
         manager->save(value);closeEditor();refresh();
     }
@@ -241,6 +250,7 @@ LRESULT CALLBACK MainProc(HWND window,UINT message,WPARAM w,LPARAM l) {
             app->manager->tick();app->refresh();
             if(app->lastScanning&&!app->manager->scanning&&app->editor)app->choices();
             app->lastScanning=app->manager->scanning;
+            if(app->editor&&SendMessageW(app->choice,CB_GETCURSEL,0,0)==0)app->updateAutomaticServer();
             if(app->manager->quitting&&app->manager->stopped())DestroyWindow(window);
             return 0;
         }

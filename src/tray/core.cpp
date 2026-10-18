@@ -191,6 +191,17 @@ std::string Manager::serverAddress(const std::string &id) const {
     if (r == runtime.end() || r->second.host.empty() || !r->second.port) return {};
     return r->second.host + ":" + std::to_string(r->second.port);
 }
+Server Manager::automaticServer(const std::string &id) const {
+    auto i = find(id);
+    auto r = runtime.find(id);
+    if (i && i->host.empty() && r != runtime.end() && !r->second.host.empty()) {
+        for (const auto &server : servers)
+            if (server.host == r->second.host && server.port == r->second.port) return server;
+        Server server; server.host = r->second.host; server.port = r->second.port;
+        server.webPort = i->webPort; return server;
+    }
+    return servers.empty() ? Server{} : servers.front();
+}
 std::string Manager::url(const std::string &id) const {
     auto i = find(id); if (!i) return {};
     if (!i->webURL.empty()) return i->webURL;

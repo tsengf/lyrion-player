@@ -41,6 +41,8 @@ and codec libraries; users do not need Python, Homebrew, MacPorts, or vcpkg.
    player name and select **Automatic**, a discovered server, or **Manual address**.
    The server list refreshes automatically at startup and 15 seconds after each
    scan completes. Manual addresses use a separate SlimProto port, normally `3483`.
+   Automatic immediately displays the known server address in the read-only host
+   field, and updates it when discovery completes. Saving keeps discovery enabled.
    Hover over the info icon beside each setting for a description.
 3. Save, select the instance, and choose **Start / Stop**. Select this player in
    Lyrion and start music there. Repeat Add for additional instances/servers.

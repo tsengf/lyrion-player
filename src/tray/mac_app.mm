@@ -216,9 +216,16 @@ static std::string U(NSString *s) { return s ? std::string(s.UTF8String) : ""; }
     save.keyEquivalent = @"\r";
     [self chooseServer:nil]; [editor makeKeyAndOrderFront:nil]; [NSApp activateIgnoringOtherApps:YES];
 }
+- (void)updateAutomaticServer {
+    auto server = manager->automaticServer(editing.id);
+    hostField.stringValue = S(server.host);
+    hostField.placeholderString = @"Discovering server…";
+    portField.stringValue = S(std::to_string(server.port)); editing.webPort = server.webPort;
+}
 - (void)chooseServer:(id)sender {
     NSInteger choice = serverChoice.indexOfSelectedItem;
-    if (choice == 0) hostField.stringValue = @"";
+    if (choice == 0) [self updateAutomaticServer];
+    else hostField.placeholderString = @"Hostname or IPv4 address";
     if (choice >= 2 && choice-2 < (NSInteger)editorServers.size()) {
         const auto &s = editorServers[choice-2];
         hostField.stringValue = S(s.host); portField.stringValue = S(std::to_string(s.port)); editing.webPort = s.webPort;
@@ -229,7 +236,8 @@ static std::string U(NSString *s) { return s ? std::string(s.UTF8String) : ""; }
 - (void)saveEditor:(id)sender {
     try {
         auto value = editing;
-        value.name = U(nameField.stringValue); value.host = U(hostField.stringValue);
+        value.name = U(nameField.stringValue);
+        value.host = serverChoice.indexOfSelectedItem == 0 ? "" : U(hostField.stringValue);
         auto port = U(portField.stringValue);
         value.port = tray::parsePort(port); value.mac = U(macField.stringValue);
         value.webURL = U(webField.stringValue); value.autoStart = autoStart.state == NSControlStateValueOn;
@@ -293,6 +301,7 @@ static std::string U(NSString *s) { return s ? std::string(s.UTF8String) : ""; }
               (status == "approval" ? " · Sign-in startup needs approval" : ""));
         if (lastScanning && !manager->scanning && editor) [self refreshServerChoices];
         lastScanning = manager->scanning;
+        if (editor && serverChoice.indexOfSelectedItem == 0) [self updateAutomaticServer];
         if (manager->quitting && manager->stopped()) [NSApp replyToApplicationShouldTerminate:YES];
     } catch (const std::exception &e) { summary.stringValue = S(e.what()); }
 }

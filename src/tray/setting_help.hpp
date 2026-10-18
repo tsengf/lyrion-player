@@ -9,6 +9,7 @@ inline constexpr char server[] =
     "or select Manual address. The server list refreshes automatically.";
 inline constexpr char host[] =
     "Hostname or IPv4 address of your Lyrion server. Editable for Manual address only. "
+    "Automatic shows the discovered address without fixing the player to that server. "
     "Do not include a URL or port.";
 inline constexpr char port[] =
     "SlimProto connection port, normally 3483. This is separate from Lyrion's web "
