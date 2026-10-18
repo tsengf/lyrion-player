@@ -6,6 +6,7 @@
 #include <commctrl.h>
 #include <shellapi.h>
 #include "core.hpp"
+#include "setting_help.hpp"
 #include <algorithm>
 
 namespace {
@@ -29,6 +30,8 @@ struct App {
     std::unique_ptr<tray::Manager> manager;
     HINSTANCE instance{};
     HWND window{}, table{}, summary{}, editor{}, name{}, host{}, port{}, mac{}, web{}, start{}, choice{};
+    HWND helpTooltip{};
+    std::deque<std::wstring> helpText;
     HFONT font{};
     NOTIFYICONDATAW icon{};
     tray::Instance editing;
@@ -125,25 +128,46 @@ struct App {
         }
         EnableWindow(host,index==1);EnableWindow(port,index==1);
     }
-    void closeEditor() { if(editor){DestroyWindow(editor);editor=nullptr;EnableWindow(window,TRUE);SetForegroundWindow(window);} }
+    void info(const wchar_t *heading,const char *description,int x,int y) {
+        HWND button=control(editor,WC_BUTTONW,L"\u24D8",WS_TABSTOP|BS_FLAT,0,x,y+2,20,22);
+        // The tooltip owns no text buffer; deque entries stay valid for the editor lifetime.
+        helpText.push_back(std::wstring(heading)+L": "+W(description));
+        TTTOOLINFOW tool{};tool.cbSize=sizeof(tool);tool.uFlags=TTF_IDISHWND|TTF_SUBCLASS;
+        tool.hwnd=editor;tool.uId=(UINT_PTR)button;tool.lpszText=helpText.back().data();
+        SendMessageW(helpTooltip,TTM_ADDTOOLW,0,(LPARAM)&tool);
+    }
+    void closeEditor() {
+        if(helpTooltip){DestroyWindow(helpTooltip);helpTooltip=nullptr;}
+        if(editor){DestroyWindow(editor);editor=nullptr;EnableWindow(window,TRUE);SetForegroundWindow(window);}
+        helpText.clear();
+    }
     void edit(tray::Instance value) {
         closeEditor();editing=std::move(value);
         editor=CreateWindowExW(WS_EX_DLGMODALFRAME,EDITOR_CLASS,L"Configure instance",WS_OVERLAPPED|WS_CAPTION|WS_SYSMENU,
-            CW_USEDEFAULT,CW_USEDEFAULT,px(590),px(440),window,nullptr,instance,this);
-        auto field=[&](const wchar_t *label,const std::string &value,int y){
+            CW_USEDEFAULT,CW_USEDEFAULT,px(620),px(440),window,nullptr,instance,this);
+        helpTooltip=CreateWindowExW(WS_EX_TOPMOST,TOOLTIPS_CLASSW,nullptr,WS_POPUP|TTS_ALWAYSTIP|TTS_NOPREFIX,
+            CW_USEDEFAULT,CW_USEDEFAULT,CW_USEDEFAULT,CW_USEDEFAULT,editor,nullptr,instance,nullptr);
+        if(!helpTooltip)throw std::runtime_error("Could not create setting tooltips");
+        SendMessageW(helpTooltip,TTM_SETMAXTIPWIDTH,0,px(360));
+        SendMessageW(helpTooltip,TTM_SETDELAYTIME,TTDT_INITIAL,350);
+        SendMessageW(helpTooltip,TTM_SETDELAYTIME,TTDT_AUTOPOP,15000);
+        auto field=[&](const wchar_t *label,const std::string &value,const char *help,int y){
             control(editor,WC_STATICW,label,0,0,16,y,155,24);
-            return control(editor,WC_EDITW,W(value).c_str(),WS_TABSTOP|ES_AUTOHSCROLL,0,180,y,365,26);
+            info(label,help,176,y);
+            return control(editor,WC_EDITW,W(value).c_str(),WS_TABSTOP|ES_AUTOHSCROLL,0,210,y,365,26);
         };
-        name=field(L"Player name",editing.name,24);
+        name=field(L"Player name",editing.name,tray::help::playerName,24);
         control(editor,WC_STATICW,L"Server",0,0,16,66,155,24);
-        choice=control(editor,WC_COMBOBOXW,L"",WS_TABSTOP|CBS_DROPDOWNLIST|WS_VSCROLL,CHOICE,180,66,365,190);
+        info(L"Server",tray::help::server,176,66);
+        choice=control(editor,WC_COMBOBOXW,L"",WS_TABSTOP|CBS_DROPDOWNLIST|WS_VSCROLL,CHOICE,210,66,365,190);
         choices();SendMessageW(choice,CB_SETCURSEL,editing.host.empty()?0:1,0);
-        host=field(L"Host / IPv4 address",editing.host,108);port=field(L"SlimProto port",std::to_string(editing.port),150);
-        mac=field(L"Player ID (advanced)",editing.mac,192);web=field(L"Web URL (optional)",editing.webURL,234);
-        start=control(editor,WC_BUTTONW,L"Start this instance with the app",WS_TABSTOP|BS_AUTOCHECKBOX,0,180,278,365,26);
+        host=field(L"Host / IPv4 address",editing.host,tray::help::host,108);port=field(L"SlimProto port",std::to_string(editing.port),tray::help::port,150);
+        mac=field(L"Player ID (advanced)",editing.mac,tray::help::playerId,192);web=field(L"Web URL (optional)",editing.webURL,tray::help::webUrl,234);
+        start=control(editor,WC_BUTTONW,L"Start this instance with the app",WS_TABSTOP|BS_AUTOCHECKBOX,0,210,278,285,26);
+        info(L"Start with app",tray::help::startWithApp,500,278);
         SendMessageW(start,BM_SETCHECK,editing.autoStart?BST_CHECKED:BST_UNCHECKED,0);
-        control(editor,WC_BUTTONW,L"Cancel",WS_TABSTOP,CANCEL,330,335,100,30);
-        control(editor,WC_BUTTONW,L"Save",WS_TABSTOP|BS_DEFPUSHBUTTON,SAVE,445,335,100,30);
+        control(editor,WC_BUTTONW,L"Cancel",WS_TABSTOP,CANCEL,360,335,100,30);
+        control(editor,WC_BUTTONW,L"Save",WS_TABSTOP|BS_DEFPUSHBUTTON,SAVE,475,335,100,30);
         choose();EnableWindow(window,FALSE);ShowWindow(editor,SW_SHOW);SetFocus(name);
     }
     void save() {

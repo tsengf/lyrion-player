@@ -2,6 +2,7 @@
 #import <AppKit/AppKit.h>
 #import <ServiceManagement/ServiceManagement.h>
 #include "core.hpp"
+#include "setting_help.hpp"
 #include <csignal>
 #include <fcntl.h>
 #include <sys/file.h>
@@ -159,9 +160,17 @@ static std::string U(NSString *s) { return s ? std::string(s.UTF8String) : ""; }
 }
 - (void)addInstance:(id)sender { [self showEditor:manager->draft()]; }
 - (void)editInstance:(id)sender { if (auto i = manager->find(U([self selected]))) [self showEditor:*i]; }
-- (NSTextField *)field:(NSString *)label value:(const std::string &)value y:(CGFloat)y view:(NSView *)view {
+- (void)info:(NSString *)heading help:(const char *)help x:(CGFloat)x y:(CGFloat)y view:(NSView *)view {
+    NSButton *info = [NSButton buttonWithImage:[NSImage imageWithSystemSymbolName:@"info.circle" accessibilityDescription:heading]
+        target:nil action:nil];
+    info.bordered = NO; info.frame = NSMakeRect(x,y+3,18,18);
+    info.toolTip = S(help); info.accessibilityLabel = [heading stringByAppendingString:@" information"];
+    info.accessibilityHelp = S(help); [view addSubview:info];
+}
+- (NSTextField *)field:(NSString *)label value:(const std::string &)value help:(const char *)help y:(CGFloat)y view:(NSView *)view {
     NSTextField *title = [NSTextField labelWithString:label]; title.frame = NSMakeRect(20,y,150,25); [view addSubview:title];
-    NSTextField *field = [[NSTextField alloc] initWithFrame:NSMakeRect(175,y,365,25)];
+    [self info:label help:help x:175 y:y view:view];
+    NSTextField *field = [[NSTextField alloc] initWithFrame:NSMakeRect(205,y,365,25)];
     field.stringValue = S(value); [view addSubview:field]; return field;
 }
 - (void)refreshServerChoices {
@@ -183,25 +192,27 @@ static std::string U(NSString *s) { return s ? std::string(s.UTF8String) : ""; }
 - (void)showEditor:(tray::Instance)value {
     if (editor) { [editor close]; editor = nil; }
     editing = std::move(value);
-    editor = [[NSWindow alloc] initWithContentRect:NSMakeRect(0,0,565,390)
+    editor = [[NSWindow alloc] initWithContentRect:NSMakeRect(0,0,595,390)
         styleMask:NSWindowStyleMaskTitled | NSWindowStyleMaskClosable backing:NSBackingStoreBuffered defer:NO];
     editor.title = @"Configure instance"; editor.releasedWhenClosed = NO; [editor center];
     NSView *view = editor.contentView;
-    nameField = [self field:@"Player name" value:editing.name y:340 view:view];
+    nameField = [self field:@"Player name" value:editing.name help:tray::help::playerName y:340 view:view];
     NSTextField *label = [NSTextField labelWithString:@"Server"]; label.frame = NSMakeRect(20,300,150,25); [view addSubview:label];
-    serverChoice = [[NSPopUpButton alloc] initWithFrame:NSMakeRect(175,300,365,28) pullsDown:NO];
+    [self info:@"Server" help:tray::help::server x:175 y:300 view:view];
+    serverChoice = [[NSPopUpButton alloc] initWithFrame:NSMakeRect(205,300,365,28) pullsDown:NO];
     serverChoice.target = self; serverChoice.action = @selector(chooseServer:); [view addSubview:serverChoice];
     [self refreshServerChoices]; [serverChoice selectItemAtIndex:editing.host.empty() ? 0 : 1];
-    hostField = [self field:@"Host / IPv4 address" value:editing.host y:260 view:view];
-    portField = [self field:@"SlimProto port" value:std::to_string(editing.port) y:220 view:view];
-    macField = [self field:@"Player ID (advanced)" value:editing.mac y:180 view:view];
-    webField = [self field:@"Web URL (optional)" value:editing.webURL y:140 view:view];
+    hostField = [self field:@"Host / IPv4 address" value:editing.host help:tray::help::host y:260 view:view];
+    portField = [self field:@"SlimProto port" value:std::to_string(editing.port) help:tray::help::port y:220 view:view];
+    macField = [self field:@"Player ID (advanced)" value:editing.mac help:tray::help::playerId y:180 view:view];
+    webField = [self field:@"Web URL (optional)" value:editing.webURL help:tray::help::webUrl y:140 view:view];
     webField.placeholderString = @"http://server:9000";
     autoStart = [NSButton checkboxWithTitle:@"Start this instance with the app" target:nil action:nil];
-    autoStart.frame = NSMakeRect(175,100,360,25); autoStart.state = editing.autoStart ? NSControlStateValueOn : NSControlStateValueOff;
+    autoStart.frame = NSMakeRect(205,100,autoStart.fittingSize.width,25); autoStart.state = editing.autoStart ? NSControlStateValueOn : NSControlStateValueOff;
     [view addSubview:autoStart];
-    [self button:@"Cancel" action:@selector(cancelEditor:) frame:NSMakeRect(315,35,100,30) in:view];
-    NSButton *save = [self button:@"Save" action:@selector(saveEditor:) frame:NSMakeRect(435,35,100,30) in:view];
+    [self info:@"Start with app" help:tray::help::startWithApp x:NSMaxX(autoStart.frame)+8 y:100 view:view];
+    [self button:@"Cancel" action:@selector(cancelEditor:) frame:NSMakeRect(345,35,100,30) in:view];
+    NSButton *save = [self button:@"Save" action:@selector(saveEditor:) frame:NSMakeRect(465,35,100,30) in:view];
     save.keyEquivalent = @"\r";
     [self chooseServer:nil]; [editor makeKeyAndOrderFront:nil]; [NSApp activateIgnoringOtherApps:YES];
 }
