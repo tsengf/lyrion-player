@@ -11,9 +11,10 @@
 static NSString *S(const std::string &s) { return [NSString stringWithUTF8String:s.c_str()] ?: @"Invalid UTF-8"; }
 static std::string U(NSString *s) { return s ? std::string(s.UTF8String) : ""; }
 
-@interface PlayerApp : NSObject <NSApplicationDelegate, NSTableViewDataSource, NSTableViewDelegate, NSWindowDelegate> {
+@interface PlayerApp : NSObject <NSApplicationDelegate, NSTableViewDataSource, NSTableViewDelegate, NSWindowDelegate, NSMenuDelegate> {
     std::unique_ptr<tray::Manager> manager;
     NSStatusItem *statusItem;
+    NSScreen *menuScreen;
     NSWindow *settings, *editor;
     NSTableView *table;
     NSButton *autoStart;
@@ -144,7 +145,32 @@ static std::string U(NSString *s) { return s ? std::string(s.UTF8String) : ""; }
     if ([column.identifier isEqualToString:@"server"]) return S(manager->serverAddress(i.id));
     return S(manager->status(i.id));
 }
-- (void)openSettings:(id)sender { [settings makeKeyAndOrderFront:nil]; [NSApp activateIgnoringOtherApps:YES]; }
+- (NSScreen *)screenAtPointer {
+    NSPoint point = NSEvent.mouseLocation;
+    for (NSScreen *screen in NSScreen.screens) if (NSPointInRect(point, screen.frame)) return screen;
+    return NSScreen.mainScreen;
+}
+- (void)placeWindow:(NSWindow *)window onScreen:(NSScreen *)screen {
+    if (!screen) return;
+    NSRect visible = screen.visibleFrame, frame = window.frame;
+    if (window.screen != screen) {
+        frame.origin.x = NSMidX(visible) - frame.size.width / 2;
+        frame.origin.y = NSMidY(visible) - frame.size.height / 2;
+    }
+    frame.origin.x = MAX(NSMinX(visible), MIN(frame.origin.x, NSMaxX(visible) - frame.size.width));
+    frame.origin.y = MAX(NSMinY(visible), MIN(frame.origin.y, NSMaxY(visible) - frame.size.height));
+    [window setFrame:frame display:NO];
+}
+- (void)menuWillOpen:(NSMenu *)menu { menuScreen = [self screenAtPointer]; }
+- (void)openSettings:(id)sender {
+    NSScreen *screen = [sender isKindOfClass:NSMenuItem.class] && [NSScreen.screens containsObject:menuScreen]
+        ? menuScreen : [self screenAtPointer];
+    if (settings.miniaturized) [settings deminiaturize:nil];
+    [self placeWindow:settings onScreen:screen];
+    [settings makeKeyAndOrderFront:nil];
+    if (editor.visible) { [self placeWindow:editor onScreen:screen]; [editor makeKeyAndOrderFront:nil]; }
+    [NSApp activateIgnoringOtherApps:YES];
+}
 - (void)openConfig:(id)sender {
     try { tray::fs::create_directories(tray::platform::configDir()); tray::platform::openFile(tray::platform::configDir()); }
     catch (const std::exception &e) { [self alert:S(e.what())]; }
@@ -195,6 +221,7 @@ static std::string U(NSString *s) { return s ? std::string(s.UTF8String) : ""; }
     editor = [[NSWindow alloc] initWithContentRect:NSMakeRect(0,0,595,390)
         styleMask:NSWindowStyleMaskTitled | NSWindowStyleMaskClosable backing:NSBackingStoreBuffered defer:NO];
     editor.title = @"Configure player"; editor.releasedWhenClosed = NO; [editor center];
+    [self placeWindow:editor onScreen:settings.screen];
     NSView *view = editor.contentView;
     nameField = [self field:@"Player name" value:editing.name help:tray::help::playerName y:340 view:view];
     NSTextField *label = [NSTextField labelWithString:@"Server"]; label.frame = NSMakeRect(20,300,150,25); [view addSubview:label];
@@ -268,7 +295,7 @@ static std::string U(NSString *s) { return s ? std::string(s.UTF8String) : ""; }
 - (void)stopAll:(id)sender { manager->stopAll(); }
 - (void)quit:(id)sender { [NSApp terminate:nil]; }
 - (void)rebuildMenu {
-    NSMenu *menu = [NSMenu new];
+    NSMenu *menu = [NSMenu new]; menu.delegate = self;
     NSMenuItem *configure = [menu addItemWithTitle:@"Settings…" action:@selector(openSettings:) keyEquivalent:@","];
     configure.target = self;
     login = [menu addItemWithTitle:@"Start at login" action:@selector(changeLogin:) keyEquivalent:@""];

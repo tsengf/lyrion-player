@@ -58,7 +58,8 @@ Player** stops every managed player before exiting. Sign-in startup runs in your
 user session so playback follows the selected output device.
 
 The tray menu provides Settings, a checked Start at login option, Start All,
-Stop All, and Quit. Individual players and their connection/audio status appear
+Stop All, and Quit. Settings opens on the monitor where you click the tray icon.
+Individual players and their connection/audio status appear
 only in Settings. Select a player there to Start/Stop, Edit, View Log, or Open
 Lyrion. These actions are greyed out when no player is selected. The read-only
 Auto discovery column shows Yes for automatic instances; Server shows their

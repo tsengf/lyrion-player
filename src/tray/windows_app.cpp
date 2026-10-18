@@ -3,6 +3,7 @@
 #define NOMINMAX
 #include <winsock2.h>
 #include <windows.h>
+#include <windowsx.h>
 #include <commctrl.h>
 #include <shellapi.h>
 #include "core.hpp"
@@ -52,7 +53,27 @@ struct App {
         int row = ListView_GetNextItem(table,-1,LVNI_SELECTED);
         return row >= 0 && row < (int)manager->instances.size() ? manager->instances[row].id : "";
     }
-    void show() { ShowWindow(window,SW_RESTORE); SetForegroundWindow(window); }
+    void show(HMONITOR monitor=nullptr) {
+        if(!monitor){POINT point;GetCursorPos(&point);monitor=MonitorFromPoint(point,MONITOR_DEFAULTTONEAREST);}
+        MONITORINFO info{sizeof(info)};
+        ShowWindow(window,SW_RESTORE);
+        if(GetMonitorInfoW(monitor,&info)){
+            auto place=[&](HWND target){
+                RECT frame;if(!GetWindowRect(target,&frame))return;
+                LONG width=frame.right-frame.left,height=frame.bottom-frame.top;
+                LONG x=frame.left,y=frame.top;
+                if(MonitorFromWindow(target,MONITOR_DEFAULTTONEAREST)!=monitor){
+                    x=info.rcWork.left+(info.rcWork.right-info.rcWork.left-width)/2;
+                    y=info.rcWork.top+(info.rcWork.bottom-info.rcWork.top-height)/2;
+                }
+                x=std::max(info.rcWork.left,std::min(x,info.rcWork.right-width));
+                y=std::max(info.rcWork.top,std::min(y,info.rcWork.bottom-height));
+                SetWindowPos(target,nullptr,x,y,0,0,SWP_NOSIZE|SWP_NOZORDER|SWP_NOACTIVATE);
+            };
+            place(window);if(editor)place(editor);
+        }
+        SetForegroundWindow(editor?editor:window);
+    }
     void addIcon() {
         icon.cbSize=sizeof(icon); icon.hWnd=window; icon.uID=1;
         icon.uFlags=NIF_MESSAGE|NIF_ICON|NIF_TIP|NIF_SHOWTIP;
@@ -203,15 +224,15 @@ struct App {
         else if(command==QUIT)manager->quit();
         refresh();
     }
-    void menu() {
+    void menu(POINT point) {
         HMENU menu=CreatePopupMenu();AppendMenuW(menu,MF_STRING,EDIT,L"Settings...");
         AppendMenuW(menu,MF_STRING|(tray::platform::loginStatus()=="on"?MF_CHECKED:MF_UNCHECKED),LOGIN,L"Start at login");
         AppendMenuW(menu,MF_SEPARATOR,0,nullptr);AppendMenuW(menu,MF_STRING,START_ALL,L"Start All");
         AppendMenuW(menu,MF_STRING,STOP_ALL,L"Stop All");AppendMenuW(menu,MF_SEPARATOR,0,nullptr);AppendMenuW(menu,MF_STRING,QUIT,L"Quit Lyrion Player");
-        POINT point;GetCursorPos(&point);SetForegroundWindow(window);
+        HMONITOR monitor=MonitorFromPoint(point,MONITOR_DEFAULTTONEAREST);SetForegroundWindow(window);
         UINT command=TrackPopupMenu(menu,TPM_RETURNCMD|TPM_NONOTIFY,point.x,point.y,0,window,nullptr);
         DestroyMenu(menu);PostMessageW(window,WM_NULL,0,0);
-        if(command==EDIT){show();return;}
+        if(command==EDIT){show(monitor);return;}
         if(command)action(command);
     }
 };
@@ -245,7 +266,13 @@ LRESULT CALLBACK MainProc(HWND window,UINT message,WPARAM w,LPARAM l) {
         if(message==WM_COMMAND){app->action(LOWORD(w));return 0;}
         if(message==WM_NOTIFY&&((NMHDR *)l)->hwndFrom==app->table&&((NMHDR *)l)->code==LVN_ITEMCHANGED){app->updatePlayerButtons();return 0;}
         if(message==WM_NOTIFY&&((NMHDR *)l)->hwndFrom==app->table&&((NMHDR *)l)->code==NM_DBLCLK){app->action(EDIT);return 0;}
-        if(message==TRAY_MESSAGE){if(LOWORD(l)==WM_CONTEXTMENU)app->menu();else if(LOWORD(l)==NIN_SELECT||LOWORD(l)==NIN_KEYSELECT)app->show();return 0;}
+        if(message==TRAY_MESSAGE){
+            POINT point{GET_X_LPARAM(w),GET_Y_LPARAM(w)};
+            if(point.x==-1&&point.y==-1)GetCursorPos(&point);
+            if(LOWORD(l)==WM_CONTEXTMENU)app->menu(point);
+            else if(LOWORD(l)==NIN_SELECT||LOWORD(l)==NIN_KEYSELECT)app->show(MonitorFromPoint(point,MONITOR_DEFAULTTONEAREST));
+            return 0;
+        }
         if(message==WM_TIMER){
             app->manager->tick();app->refresh();
             if(app->lastScanning&&!app->manager->scanning&&app->editor)app->choices();
