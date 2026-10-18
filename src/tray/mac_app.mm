@@ -194,7 +194,7 @@ static std::string U(NSString *s) { return s ? std::string(s.UTF8String) : ""; }
     editing = std::move(value);
     editor = [[NSWindow alloc] initWithContentRect:NSMakeRect(0,0,595,390)
         styleMask:NSWindowStyleMaskTitled | NSWindowStyleMaskClosable backing:NSBackingStoreBuffered defer:NO];
-    editor.title = @"Configure instance"; editor.releasedWhenClosed = NO; [editor center];
+    editor.title = @"Configure player"; editor.releasedWhenClosed = NO; [editor center];
     NSView *view = editor.contentView;
     nameField = [self field:@"Player name" value:editing.name help:tray::help::playerName y:340 view:view];
     NSTextField *label = [NSTextField labelWithString:@"Server"]; label.frame = NSMakeRect(20,300,150,25); [view addSubview:label];

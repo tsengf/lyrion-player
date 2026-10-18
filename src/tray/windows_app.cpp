@@ -143,7 +143,7 @@ struct App {
     }
     void edit(tray::Instance value) {
         closeEditor();editing=std::move(value);
-        editor=CreateWindowExW(WS_EX_DLGMODALFRAME,EDITOR_CLASS,L"Configure instance",WS_OVERLAPPED|WS_CAPTION|WS_SYSMENU,
+        editor=CreateWindowExW(WS_EX_DLGMODALFRAME,EDITOR_CLASS,L"Configure player",WS_OVERLAPPED|WS_CAPTION|WS_SYSMENU,
             CW_USEDEFAULT,CW_USEDEFAULT,px(620),px(440),window,nullptr,instance,this);
         helpTooltip=CreateWindowExW(WS_EX_TOPMOST,TOOLTIPS_CLASSW,nullptr,WS_POPUP|TTS_ALWAYSTIP|TTS_NOPREFIX,
             CW_USEDEFAULT,CW_USEDEFAULT,CW_USEDEFAULT,CW_USEDEFAULT,editor,nullptr,instance,nullptr);
