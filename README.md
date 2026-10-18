@@ -39,11 +39,13 @@ and codec libraries; users do not need Python, Homebrew, MacPorts, or vcpkg.
    open **Lyrion Player.exe**, keeping `player.exe` and all DLLs beside it.
 2. Open **Settings…** from the menu-bar/tray icon, then choose **Add…**. Enter a
    player name and select **Automatic**, a discovered server, or **Manual address**.
-   Use **Scan servers** to refresh the discovered list. Manual addresses use a
-   separate SlimProto port, normally `3483`.
+   The server list refreshes automatically at startup and 15 seconds after each
+   scan completes. Manual addresses use a separate SlimProto port, normally `3483`.
+   Hover over the info icon beside each setting for a description.
 3. Save, select the instance, and choose **Start / Stop**. Select this player in
    Lyrion and start music there. Repeat Add for additional instances/servers.
-4. Enable **Start at sign-in** to register the tray app once. It is off initially.
+4. Enable **Start at login** in the tray menu to register the tray app once.
+   It is off initially.
    **Start this instance with the app** controls which instances launch when the
    tray app opens, and is on for new instances.
 
@@ -53,12 +55,18 @@ services. Closing the Settings window keeps playback running. **Quit Lyrion
 Player** stops every managed player before exiting. Sign-in startup runs in your
 user session so playback follows the selected output device.
 
-The tray menu provides per-instance Start/Stop, Edit, View Log, and Open Lyrion,
-plus Start All and Stop All. The Settings window shows connection and audio
-availability. Editing a running instance restarts only that instance. Unexpected
-player exits retry after 1, 2 and 4 seconds; another failure within a minute leaves
-that instance in Error until you start it again. Closing or crashing the tray app
-cannot leave its players running independently.
+The tray menu provides Settings, a checked Start at login option, Start All,
+Stop All, and Quit. Individual players and their connection/audio status appear
+only in Settings. Select a player there to Start/Stop, Edit, View Log, or Open
+Lyrion. These actions are greyed out when no player is selected. The read-only
+Auto discovery column shows Yes for automatic instances; Server shows their
+discovered IP and SlimProto port once known and stays blank until discovery
+finds a server. Manual instances show No and their configured host and port.
+Start with app shows Yes or No according to the instance’s saved startup
+setting. Editing a running instance restarts only that instance. Unexpected
+player exits retry after 1, 2 and 4 seconds; another failure within a minute
+leaves that instance in Error until you start it again. Closing or crashing the
+tray app cannot leave its players running independently.
 
 Each instance gets a saved, unique MAC-style **Player ID**. Keep it unchanged to
 preserve Lyrion's identity and settings. Use a different ID for every instance.
@@ -68,28 +76,16 @@ save the server's current IP address. Use a stable hostname/manual address or
 select it again if that address changes. Open Lyrion uses the discovered web port
 (default `9000`); set the optional Web URL for a custom HTTPS/proxy address.
 
-On macOS, Start at sign-in uses `SMAppService`. If approval is required, enable
+On macOS, Start at login uses `SMAppService`. If approval is required, enable
 Lyrion Player in System Settings → General → Login Items. On Windows, it uses one
 `LyrionPlayerTray` value in your own account's Run registry key. Put the app in its
 permanent location before enabling startup. These are user-session registrations;
 no administrator privileges are needed.
 
-### Import existing startup entries
+Configuration:
 
-Choose **Import…** in Settings to migrate entries created by `service.py` or
-`service.ps1` for your current user. Review each confirmation: it preserves the
-player name, server and ID, backs up the old registration, stops/removes that
-registration, then starts the instance under the tray app. If an old entry omitted
-its ID, import resolves the backend's current network identity before migration.
-A failed migration retains a stopped draft that cannot start until **Import…** is
-retried successfully. Unsupported custom launch options are reported for manual
-migration. Enable the tray app's **Start at sign-in** separately after importing.
-Other users' entries are not imported.
-
-Configuration and import backups:
-
-- macOS: `~/Library/Application Support/lyrion-player/config.json` and `import-backups/`.
-- Windows: `%LOCALAPPDATA%\lyrion-player\config.json` and `import-backups\`.
+- macOS: `~/Library/Application Support/lyrion-player/config.json`.
+- Windows: `%LOCALAPPDATA%\lyrion-player\config.json`.
 
 Logs use `player-<instance ID>.log` in `~/Library/Logs/lyrion-player/` on macOS and
 `%LOCALAPPDATA%\lyrion-player\` on Windows. Use View Log to open the selected
@@ -186,7 +182,8 @@ for tests and the optional legacy macOS registration script.
 
 The following scripts remain available for headless use. They create individual
 startup entries and are independent of the tray app. For tray-managed instances,
-use the app's Start at sign-in setting and Import flow above instead.
+use the app's Start at login setting. Remove any old script-created startup
+entries before adding the same players in Settings to avoid duplicate players.
 
 
 The background player runs in your own user session so it follows your audio

@@ -79,12 +79,12 @@ A stopped instance stays stopped; editing an active one restarts just that child
 Unexpected exits retry at 1/2/4 seconds, with the fourth exit in a minute requiring
 manual retry. A launch error affects only that instance. Shutdown disables retries.
 The native main loops poll status without waiting for a server scan: metadata
-scans run asynchronously and support cancellation. The shared discovery adapter
+scans run asynchronously and support cancellation. Scanning starts with the app
+and repeats 15 seconds after each scan completes, without overlapping scans. The
+shared discovery adapter
 has separate first-response and collect-all APIs. NAME/UUID/JSON fields identify
 servers and their web ports, with deduplication across interfaces in the manager.
 
-Legacy import enumerates only this user's script-generated registration names,
-checks executable/arguments, and asks before changing OS state. It saves a blocked,
-stopped draft, checks the registration has not changed, saves a backup, removes the
-old startup job, then enables the imported instance. Failure keeps the draft
-blocked for retry. The tray app never creates per-instance startup jobs.
+The tray app never creates per-instance startup jobs or imports legacy startup
+entries. Remove old script-created registrations manually before configuring
+those players in Settings.
