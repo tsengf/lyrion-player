@@ -303,8 +303,8 @@ static std::string U(NSString *s) { return s ? std::string(s.UTF8String) : ""; }
     auto loginStatus = tray::platform::loginStatus();
     login.state = loginStatus == "on" ? NSControlStateValueOn : loginStatus == "approval" ? NSControlStateValueMixed : NSControlStateValueOff;
     [menu addItem:NSMenuItem.separatorItem];
-    NSMenuItem *start = [menu addItemWithTitle:@"Start All" action:@selector(startAll:) keyEquivalent:@""]; start.target = self;
-    NSMenuItem *stop = [menu addItemWithTitle:@"Stop All" action:@selector(stopAll:) keyEquivalent:@""]; stop.target = self;
+    NSMenuItem *start = [menu addItemWithTitle:@"Start all players" action:@selector(startAll:) keyEquivalent:@""]; start.target = self;
+    NSMenuItem *stop = [menu addItemWithTitle:@"Stop all players" action:@selector(stopAll:) keyEquivalent:@""]; stop.target = self;
     [menu addItem:NSMenuItem.separatorItem];
     NSMenuItem *quit = [menu addItemWithTitle:@"Quit Lyrion Player" action:@selector(quit:) keyEquivalent:@"q"]; quit.target = self;
     statusItem.menu = menu;

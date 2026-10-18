@@ -227,8 +227,8 @@ struct App {
     void menu(POINT point) {
         HMENU menu=CreatePopupMenu();AppendMenuW(menu,MF_STRING,EDIT,L"Settings...");
         AppendMenuW(menu,MF_STRING|(tray::platform::loginStatus()=="on"?MF_CHECKED:MF_UNCHECKED),LOGIN,L"Start at login");
-        AppendMenuW(menu,MF_SEPARATOR,0,nullptr);AppendMenuW(menu,MF_STRING,START_ALL,L"Start All");
-        AppendMenuW(menu,MF_STRING,STOP_ALL,L"Stop All");AppendMenuW(menu,MF_SEPARATOR,0,nullptr);AppendMenuW(menu,MF_STRING,QUIT,L"Quit Lyrion Player");
+        AppendMenuW(menu,MF_SEPARATOR,0,nullptr);AppendMenuW(menu,MF_STRING,START_ALL,L"Start all players");
+        AppendMenuW(menu,MF_STRING,STOP_ALL,L"Stop all players");AppendMenuW(menu,MF_SEPARATOR,0,nullptr);AppendMenuW(menu,MF_STRING,QUIT,L"Quit Lyrion Player");
         HMONITOR monitor=MonitorFromPoint(point,MONITOR_DEFAULTTONEAREST);SetForegroundWindow(window);
         UINT command=TrackPopupMenu(menu,TPM_RETURNCMD|TPM_NONOTIFY,point.x,point.y,0,window,nullptr);
         DestroyMenu(menu);PostMessageW(window,WM_NULL,0,0);
