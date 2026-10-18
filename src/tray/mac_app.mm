@@ -10,19 +10,21 @@
 static NSString *S(const std::string &s) { return [NSString stringWithUTF8String:s.c_str()] ?: @"Invalid UTF-8"; }
 static std::string U(NSString *s) { return s ? std::string(s.UTF8String) : ""; }
 
-@interface PlayerApp : NSObject <NSApplicationDelegate, NSTableViewDataSource, NSTableViewDelegate, NSWindowDelegate, NSMenuDelegate> {
+@interface PlayerApp : NSObject <NSApplicationDelegate, NSTableViewDataSource, NSTableViewDelegate, NSWindowDelegate> {
     std::unique_ptr<tray::Manager> manager;
     NSStatusItem *statusItem;
     NSWindow *settings, *editor;
     NSTableView *table;
-    NSButton *login, *autoStart;
+    NSButton *autoStart;
+    NSArray<NSButton *> *playerButtons;
+    NSMenuItem *login;
     NSTextField *summary, *nameField, *hostField, *portField, *macField, *webField;
     NSPopUpButton *serverChoice;
     tray::Instance editing;
     std::vector<tray::Server> editorServers;
     std::string tableSnapshot;
     int lockFD;
-    bool lastScanning, smoke, menuOpen;
+    bool lastScanning, smoke;
 }
 - (void)openSettings:(id)sender;
 @end
@@ -90,42 +92,55 @@ static std::string U(NSString *s) { return s ? std::string(s.UTF8String) : ""; }
 }
 - (BOOL)applicationShouldHandleReopen:(NSApplication *)app hasVisibleWindows:(BOOL)visible { [self openSettings:nil]; return YES; }
 - (void)buildSettings {
-    settings = [[NSWindow alloc] initWithContentRect:NSMakeRect(0,0,820,430)
+    settings = [[NSWindow alloc] initWithContentRect:NSMakeRect(0,0,940,430)
         styleMask:NSWindowStyleMaskTitled | NSWindowStyleMaskClosable | NSWindowStyleMaskMiniaturizable | NSWindowStyleMaskResizable
         backing:NSBackingStoreBuffered defer:NO];
     settings.title = @"Lyrion Player — Settings"; settings.releasedWhenClosed = NO;
     [settings center];
     NSView *view = settings.contentView;
-    NSScrollView *scroll = [[NSScrollView alloc] initWithFrame:NSMakeRect(20,120,780,285)];
+    NSScrollView *scroll = [[NSScrollView alloc] initWithFrame:NSMakeRect(20,120,900,285)];
     scroll.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable; scroll.hasVerticalScroller = YES;
     table = [[NSTableView alloc] initWithFrame:scroll.bounds];
-    NSArray *keys = @[@"name", @"server", @"status"];
-    NSArray *titles = @[@"Player", @"Server", @"Status"];
+    NSArray *keys = @[@"name", @"discovery", @"server", @"autoStart", @"status"];
+    NSArray *titles = @[@"Player", @"Auto discovery", @"Server", @"Start with app", @"Status"];
+    const CGFloat widths[] = {180, 120, 170, 120, 280};
     for (NSUInteger i=0; i<keys.count; ++i) {
         NSTableColumn *column = [[NSTableColumn alloc] initWithIdentifier:keys[i]];
-        column.title = titles[i]; column.width = i == 2 ? 300 : 220;
+        column.title = titles[i]; column.width = widths[i];
         [table addTableColumn:column];
     }
     table.delegate = self; table.dataSource = self; table.rowHeight = 27;
     table.target = self; table.doubleAction = @selector(editInstance:);
     scroll.documentView = table; [view addSubview:scroll];
-    NSArray *labels = @[@"Add…", @"Edit…", @"Remove", @"Start / Stop", @"Import…"];
+    NSArray *labels = @[@"Add…", @"Edit…", @"Remove", @"Start / Stop"];
     SEL actions[] = {@selector(addInstance:), @selector(editInstance:), @selector(removeInstance:),
-        @selector(toggleSelected:), @selector(importInstances:)};
-    for (NSUInteger i=0; i<labels.count; ++i)
-        [self button:labels[i] action:actions[i] frame:NSMakeRect(20+i*127,78,120,30) in:view];
-    login = [NSButton checkboxWithTitle:@"Start at sign-in" target:self action:@selector(changeLogin:)];
-    login.frame = NSMakeRect(20,40,170,24); [view addSubview:login];
-    [self button:@"Open configuration folder" action:@selector(openConfig:) frame:NSMakeRect(200,38,210,28) in:view];
-    summary = [NSTextField labelWithString:@""]; summary.frame = NSMakeRect(20,10,780,24);
+        @selector(toggleSelected:)};
+    NSMutableArray<NSButton *> *selectionButtons = [NSMutableArray new];
+    for (NSUInteger i=0; i<labels.count; ++i) {
+        NSButton *button = [self button:labels[i] action:actions[i] frame:NSMakeRect(20+i*127,78,120,30) in:view];
+        if (i > 0) [selectionButtons addObject:button];
+    }
+    [self button:@"Open configuration folder" action:@selector(openConfig:) frame:NSMakeRect(20,38,210,28) in:view];
+    [selectionButtons addObject:[self button:@"Open Lyrion" action:@selector(openSelectedLyrion:) frame:NSMakeRect(250,38,120,28) in:view]];
+    [selectionButtons addObject:[self button:@"View Log" action:@selector(viewSelectedLog:) frame:NSMakeRect(380,38,120,28) in:view]];
+    playerButtons = [selectionButtons copy];
+    [self updatePlayerButtons];
+    summary = [NSTextField labelWithString:@""]; summary.frame = NSMakeRect(20,10,900,24);
     [view addSubview:summary];
 }
+- (void)updatePlayerButtons {
+    BOOL enabled = manager && !manager->quitting && manager->find(U([self selected])) != nullptr;
+    for (NSButton *button in playerButtons) button.enabled = enabled;
+}
+- (void)tableViewSelectionDidChange:(NSNotification *)notification { [self updatePlayerButtons]; }
 - (NSInteger)numberOfRowsInTableView:(NSTableView *)view { return manager ? manager->instances.size() : 0; }
 - (id)tableView:(NSTableView *)view objectValueForTableColumn:(NSTableColumn *)column row:(NSInteger)row {
     if (row < 0 || row >= (NSInteger)manager->instances.size()) return @"";
     const auto &i = manager->instances[row];
     if ([column.identifier isEqualToString:@"name"]) return S(i.name);
-    if ([column.identifier isEqualToString:@"server"]) return i.host.empty() ? @"Automatic discovery" : S(i.host+":"+std::to_string(i.port));
+    if ([column.identifier isEqualToString:@"discovery"]) return i.host.empty() ? @"Yes" : @"No";
+    if ([column.identifier isEqualToString:@"autoStart"]) return i.autoStart ? @"Yes" : @"No";
+    if ([column.identifier isEqualToString:@"server"]) return S(manager->serverAddress(i.id));
     return S(manager->status(i.id));
 }
 - (void)openSettings:(id)sender { [settings makeKeyAndOrderFront:nil]; [NSApp activateIgnoringOtherApps:YES]; }
@@ -135,7 +150,7 @@ static std::string U(NSString *s) { return s ? std::string(s.UTF8String) : ""; }
 }
 - (void)changeLogin:(id)sender {
     try {
-        tray::platform::setLogin(login.state == NSControlStateValueOn);
+        tray::platform::setLogin(tray::platform::loginStatus() == "off");
         if (tray::platform::loginStatus() == "approval") {
             [self alert:@"Approve Lyrion Player in System Settings → General → Login Items."];
             [SMAppService openSystemSettingsLoginItems];
@@ -215,43 +230,32 @@ static std::string U(NSString *s) { return s ? std::string(s.UTF8String) : ""; }
     if (![self confirm:S("Remove " + i->name + "? Its player will stop; logs will be retained.")]) return;
     try { manager->remove(id); [table reloadData]; } catch (const std::exception &e) { [self alert:S(e.what())]; }
 }
-- (void)toggleSelected:(id)sender { [self toggle:U([self selected])]; }
+- (void)toggleSelected:(id)sender { auto id = U([self selected]); if (manager->find(id)) [self toggle:id]; }
 - (void)toggle:(const std::string &)id {
     if (manager->runtime[id].desired) manager->stop(id); else manager->start(id);
 }
-- (void)instanceAction:(NSMenuItem *)item {
-    NSString *identity = item.representedObject;
-    auto id = U(identity);
-    if (item.tag == 0) [self toggle:id];
-    else if (item.tag == 1) {
-        auto url = manager->url(id);
-        if (url.empty()) [self alert:@"Start the instance and wait for it to connect, or set a web URL in Settings."];
-        else tray::platform::openURL(url);
-    } else if (item.tag == 2) {
-        auto path = manager->logPath(id);
-        if (tray::fs::exists(path)) tray::platform::openFile(path); else [self alert:@"No log exists yet. Start the instance first."];
-    } else if (auto i = manager->find(id)) [self showEditor:*i];
+- (void)openSelectedLyrion:(id)sender {
+    auto id = U([self selected]); if (!manager->find(id)) return;
+    auto url = manager->url(id);
+    if (url.empty()) [self alert:@"Start the instance and wait for it to connect, or set a web URL in Settings."];
+    else tray::platform::openURL(url);
+}
+- (void)viewSelectedLog:(id)sender {
+    auto id = U([self selected]); if (!manager->find(id)) return;
+    auto path = manager->logPath(id);
+    if (tray::fs::exists(path)) tray::platform::openFile(path); else [self alert:@"No log exists yet. Start the instance first."];
 }
 - (void)startAll:(id)sender { manager->startAll(); }
 - (void)stopAll:(id)sender { manager->stopAll(); }
 - (void)quit:(id)sender { [NSApp terminate:nil]; }
 - (void)rebuildMenu {
-    // Avoid replacing a menu while the user is interacting with it.
-    if (menuOpen) return;
     NSMenu *menu = [NSMenu new];
-    menu.delegate = self;
     NSMenuItem *configure = [menu addItemWithTitle:@"Settings…" action:@selector(openSettings:) keyEquivalent:@","];
     configure.target = self;
-    for (const auto &i : manager->instances) {
-        NSMenuItem *entry = [menu addItemWithTitle:S(i.name+" — "+manager->status(i.id)) action:nil keyEquivalent:@""];
-        NSMenu *sub = [NSMenu new];
-        NSArray *titles = @[manager->runtime[i.id].desired ? @"Stop" : @"Start", @"Open Lyrion", @"View Log", @"Edit…"];
-        for (NSInteger action = 0; action < 4; ++action) {
-            NSMenuItem *item = [sub addItemWithTitle:titles[action] action:@selector(instanceAction:) keyEquivalent:@""];
-            item.target = self; item.tag = action; item.representedObject = S(i.id);
-        }
-        entry.submenu = sub;
-    }
+    login = [menu addItemWithTitle:@"Start at login" action:@selector(changeLogin:) keyEquivalent:@""];
+    login.target = self;
+    auto loginStatus = tray::platform::loginStatus();
+    login.state = loginStatus == "on" ? NSControlStateValueOn : loginStatus == "approval" ? NSControlStateValueMixed : NSControlStateValueOff;
     [menu addItem:NSMenuItem.separatorItem];
     NSMenuItem *start = [menu addItemWithTitle:@"Start All" action:@selector(startAll:) keyEquivalent:@""]; start.target = self;
     NSMenuItem *stop = [menu addItemWithTitle:@"Stop All" action:@selector(stopAll:) keyEquivalent:@""]; stop.target = self;
@@ -259,41 +263,25 @@ static std::string U(NSString *s) { return s ? std::string(s.UTF8String) : ""; }
     NSMenuItem *quit = [menu addItemWithTitle:@"Quit Lyrion Player" action:@selector(quit:) keyEquivalent:@"q"]; quit.target = self;
     statusItem.menu = menu;
 }
-- (void)menuWillOpen:(NSMenu *)menu { menuOpen = true; }
-- (void)menuDidClose:(NSMenu *)menu { menuOpen = false; }
-- (void)importInstances:(id)sender {
-    try {
-        auto entries = tray::platform::legacyServices();
-        if (entries.empty()) { [self alert:@"No startup entries created by the service scripts were found."]; return; }
-        for (auto &entry : entries) {
-            if (!entry.error.empty()) { [self alert:S(entry.label+": "+entry.error)]; continue; }
-            std::string description = "Import " + entry.name + "?\nServer: " + (entry.host.empty() ? "Automatic" : entry.host) +
-                "\nPlayer ID: " + (entry.mac.empty() ? "Current network identity (resolved on import)" : entry.mac) +
-                "\n\nThe original startup entry will be backed up and removed. Only the tray app will manage this player. Start at sign-in remains unchanged.";
-            if ([self confirm:S(description)]) manager->importLegacy(entry);
-        }
-        [table reloadData];
-    } catch (const std::exception &e) { [self alert:S(e.what())]; }
-}
 - (void)tick:(NSTimer *)timer {
     if (!manager) return;
     try {
         manager->tick();
         auto snapshot = tray::encodeConfig(manager->instances);
-        for (const auto &i : manager->instances) snapshot += manager->status(i.id)+"\n";
+        for (const auto &i : manager->instances) snapshot += manager->status(i.id)+"\n"+manager->serverAddress(i.id)+"\n";
         if (snapshot != tableSnapshot) {
             tableSnapshot = std::move(snapshot);
             NSInteger row = table.selectedRow; [table reloadData];
             if (row >= 0 && row < (NSInteger)manager->instances.size()) [table selectRowIndexes:[NSIndexSet indexSetWithIndex:row] byExtendingSelection:NO];
         }
+        [self updatePlayerButtons];
         auto status = tray::platform::loginStatus();
-        login.state = status == "on" ? NSControlStateValueOn : NSControlStateValueOff;
+        login.state = status == "on" ? NSControlStateValueOn : status == "approval" ? NSControlStateValueMixed : NSControlStateValueOff;
         summary.stringValue = manager->quitting ? @"Stopping players…" : manager->scanning ? @"Scanning servers…" :
             S(std::to_string(manager->instances.size())+" instances · "+std::to_string(manager->servers.size())+" servers found" +
               (status == "approval" ? " · Sign-in startup needs approval" : ""));
         if (lastScanning && !manager->scanning && editor) [self refreshServerChoices];
         lastScanning = manager->scanning;
-        [self rebuildMenu];
         if (manager->quitting && manager->stopped()) [NSApp replyToApplicationShouldTerminate:YES];
     } catch (const std::exception &e) { summary.stringValue = S(e.what()); }
 }

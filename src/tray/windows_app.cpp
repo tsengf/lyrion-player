@@ -7,7 +7,6 @@
 #include <shellapi.h>
 #include "core.hpp"
 #include <algorithm>
-#include <map>
 
 namespace {
 std::wstring W(const std::string &s) {
@@ -22,19 +21,18 @@ std::string text(HWND control) {
     std::wstring value(GetWindowTextLengthW(control)+1, L'\0');
     int count = GetWindowTextW(control, value.data(), (int)value.size()); value.resize(count); return U(value);
 }
-enum { ADD=101, EDIT, REMOVE, TOGGLE, IMPORT, LOGIN, CONFIG, START_ALL, STOP_ALL, QUIT,
+enum { ADD=101, EDIT, REMOVE, TOGGLE, LOGIN, CONFIG, START_ALL, STOP_ALL, QUIT, OPEN_LYRION, VIEW_LOG,
        SAVE=201, CANCEL, CHOICE };
 constexpr UINT TRAY_MESSAGE = WM_APP+1, ACTIVATE_MESSAGE = WM_APP+2;
 constexpr wchar_t MAIN_CLASS[] = L"LyrionPlayerTrayWindow", EDITOR_CLASS[] = L"LyrionPlayerInstanceEditor";
 struct App {
     std::unique_ptr<tray::Manager> manager;
     HINSTANCE instance{};
-    HWND window{}, table{}, summary{}, login{}, editor{}, name{}, host{}, port{}, mac{}, web{}, start{}, choice{};
+    HWND window{}, table{}, summary{}, editor{}, name{}, host{}, port{}, mac{}, web{}, start{}, choice{};
     HFONT font{};
     NOTIFYICONDATAW icon{};
     tray::Instance editing;
     std::vector<tray::Server> editorServers;
-    std::map<UINT, std::pair<std::string,int>> menuActions;
     std::string tableSnapshot;
     bool lastScanning = false, smoke = false;
     int dpi = 96;
@@ -61,33 +59,44 @@ struct App {
         Shell_NotifyIconW(NIM_ADD,&icon); icon.uVersion=NOTIFYICON_VERSION_4;
         Shell_NotifyIconW(NIM_SETVERSION,&icon);
     }
+    void updatePlayerButtons() {
+        bool enabled=!manager->quitting&&manager->find(selected())!=nullptr;
+        for(int command:{EDIT,REMOVE,TOGGLE,OPEN_LYRION,VIEW_LOG})EnableWindow(GetDlgItem(window,command),enabled);
+    }
     void build() {
-        table=control(window,WC_LISTVIEWW,L"",WS_TABSTOP|WS_BORDER|LVS_REPORT|LVS_SINGLESEL,1,16,16,770,270);
+        table=control(window,WC_LISTVIEWW,L"",WS_TABSTOP|WS_BORDER|LVS_REPORT|LVS_SINGLESEL,1,16,16,890,270);
         ListView_SetExtendedListViewStyle(table,LVS_EX_FULLROWSELECT|LVS_EX_DOUBLEBUFFER);
-        const wchar_t *columns[]={L"Player",L"Server",L"Status"};
-        for(int i=0;i<3;++i){ LVCOLUMNW column{};column.mask=LVCF_TEXT|LVCF_WIDTH;column.pszText=const_cast<LPWSTR>(columns[i]);column.cx=px(i==2?300:220);ListView_InsertColumn(table,i,&column); }
-        const wchar_t *labels[]={L"Add...",L"Edit...",L"Remove",L"Start / Stop",L"Import..."};
-        for(int i=0;i<5;++i) control(window,WC_BUTTONW,labels[i],WS_TABSTOP,ADD+i,16+i*128,302,120,30);
-        login=control(window,WC_BUTTONW,L"Start at sign-in",WS_TABSTOP|BS_AUTOCHECKBOX,LOGIN,16,348,170,26);
-        control(window,WC_BUTTONW,L"Open configuration folder",WS_TABSTOP,CONFIG,200,346,220,30);
-        summary=control(window,WC_STATICW,L"",0,2,16,389,770,24);
+        const wchar_t *columns[]={L"Player",L"Auto discovery",L"Server",L"Start with app",L"Status"};
+        const int widths[]={180,120,170,120,280};
+        for(int i=0;i<5;++i){ LVCOLUMNW column{};column.mask=LVCF_TEXT|LVCF_WIDTH;column.pszText=const_cast<LPWSTR>(columns[i]);column.cx=px(widths[i]);ListView_InsertColumn(table,i,&column); }
+        const wchar_t *labels[]={L"Add...",L"Edit...",L"Remove",L"Start / Stop"};
+        for(int i=0;i<4;++i) control(window,WC_BUTTONW,labels[i],WS_TABSTOP,ADD+i,16+i*128,302,120,30);
+        control(window,WC_BUTTONW,L"Open configuration folder",WS_TABSTOP,CONFIG,16,346,220,30);
+        control(window,WC_BUTTONW,L"Open Lyrion",WS_TABSTOP,OPEN_LYRION,256,346,120,30);
+        control(window,WC_BUTTONW,L"View Log",WS_TABSTOP,VIEW_LOG,384,346,120,30);
+        summary=control(window,WC_STATICW,L"",0,2,16,389,890,24);
+        updatePlayerButtons();
     }
     void refresh() {
         auto selectedId=selected();
         std::string snapshot=tray::encodeConfig(manager->instances);
-        for(const auto &i:manager->instances)snapshot+=manager->status(i.id)+"\n";
+        for(const auto &i:manager->instances)snapshot+=manager->status(i.id)+"\n"+manager->serverAddress(i.id)+"\n";
         if(snapshot!=tableSnapshot){
         tableSnapshot=std::move(snapshot);
         ListView_DeleteAllItems(table);
         for(size_t row=0;row<manager->instances.size();++row){
             const auto &i=manager->instances[row];
-            auto nameValue=W(i.name),serverValue=W(i.host.empty()?"Automatic discovery":i.host+":"+std::to_string(i.port)),state=W(manager->status(i.id));
+            auto nameValue=W(i.name),serverValue=W(manager->serverAddress(i.id)),state=W(manager->status(i.id));
             LVITEMW item{};item.mask=LVIF_TEXT;item.iItem=(int)row;item.pszText=nameValue.data();ListView_InsertItem(table,&item);
-            ListView_SetItemText(table,(int)row,1,serverValue.data()); ListView_SetItemText(table,(int)row,2,state.data());
+            auto discoveryValue=W(i.host.empty()?"Yes":"No");
+            ListView_SetItemText(table,(int)row,1,discoveryValue.data());
+            auto autoStartValue=W(i.autoStart?"Yes":"No");
+            ListView_SetItemText(table,(int)row,2,serverValue.data());
+            ListView_SetItemText(table,(int)row,3,autoStartValue.data()); ListView_SetItemText(table,(int)row,4,state.data());
             if(i.id==selectedId) ListView_SetItemState(table,(int)row,LVIS_SELECTED,LVIS_SELECTED);
         }
         }
-        SendMessageW(login,BM_SETCHECK,tray::platform::loginStatus()=="on"?BST_CHECKED:BST_UNCHECKED,0);
+        updatePlayerButtons();
         auto value=manager->quitting?"Stopping players...":manager->scanning?"Scanning servers...":
             std::to_string(manager->instances.size())+" instances; "+std::to_string(manager->servers.size())+" servers found";
         SetWindowTextW(summary,W(value).c_str());
@@ -142,53 +151,35 @@ struct App {
         value.port=tray::parsePort(text(port));value.autoStart=SendMessageW(start,BM_GETCHECK,0,0)==BST_CHECKED;
         manager->save(value);closeEditor();refresh();
     }
-    void import() {
-        auto entries=tray::platform::legacyServices();
-        if(entries.empty()){MessageBoxW(window,L"No startup tasks created by the service scripts were found.",L"Lyrion Player",MB_OK);return;}
-        for(auto &entry:entries){
-            if(!entry.error.empty()){error(entry.label+": "+entry.error);continue;}
-            auto message="Import "+entry.name+"?\nServer: "+(entry.host.empty()?"Automatic":entry.host)+
-                "\nPlayer ID: "+(entry.mac.empty()?"Current network identity (resolved on import)":entry.mac)+
-                "\n\nThe original startup task will be backed up and removed. Only the tray app will manage this player. Start at sign-in remains unchanged.";
-            if(confirm(message))manager->importLegacy(entry);
-        }
-        refresh();
-    }
     void action(UINT command) {
         auto id=selected();
         if(command==ADD)edit(manager->draft());
         else if(command==EDIT){if(auto i=manager->find(id))edit(*i);}
         else if(command==REMOVE){if(auto i=manager->find(id))if(confirm("Remove "+i->name+"? Its player will stop; logs will be retained."))manager->remove(id);}
         else if(command==TOGGLE){if(manager->find(id)){if(manager->runtime[id].desired)manager->stop(id);else manager->start(id);}}
-        else if(command==IMPORT)import();
-        else if(command==LOGIN)tray::platform::setLogin(SendMessageW(login,BM_GETCHECK,0,0)==BST_CHECKED);
+        else if(command==LOGIN)tray::platform::setLogin(tray::platform::loginStatus()!="on");
         else if(command==CONFIG){tray::fs::create_directories(tray::platform::configDir());tray::platform::openFile(tray::platform::configDir());}
+        else if(command==OPEN_LYRION&&manager->find(id)){
+            auto url=manager->url(id);if(url.empty())throw std::runtime_error("Start the instance first or set its web URL");tray::platform::openURL(url);
+        }
+        else if(command==VIEW_LOG&&manager->find(id)){
+            auto path=manager->logPath(id);if(!tray::fs::exists(path))throw std::runtime_error("No log exists yet. Start the instance first.");tray::platform::openFile(path);
+        }
         else if(command==START_ALL)manager->startAll();
         else if(command==STOP_ALL)manager->stopAll();
         else if(command==QUIT)manager->quit();
         refresh();
     }
     void menu() {
-        HMENU menu=CreatePopupMenu();menuActions.clear();AppendMenuW(menu,MF_STRING,EDIT,L"Settings...");
-        for(size_t row=0;row<manager->instances.size();++row){
-            const auto &i=manager->instances[row];HMENU sub=CreatePopupMenu();
-            std::wstring labels[]={manager->runtime[i.id].desired?L"Stop":L"Start",L"Open Lyrion",L"View Log",L"Edit..."};
-            for(int a=0;a<4;++a){UINT command=1000+(UINT)row*4+a;AppendMenuW(sub,MF_STRING,command,labels[a].c_str());menuActions[command]={i.id,a};}
-            AppendMenuW(menu,MF_POPUP,(UINT_PTR)sub,W(i.name+" - "+manager->status(i.id)).c_str());
-        }
+        HMENU menu=CreatePopupMenu();AppendMenuW(menu,MF_STRING,EDIT,L"Settings...");
+        AppendMenuW(menu,MF_STRING|(tray::platform::loginStatus()=="on"?MF_CHECKED:MF_UNCHECKED),LOGIN,L"Start at login");
         AppendMenuW(menu,MF_SEPARATOR,0,nullptr);AppendMenuW(menu,MF_STRING,START_ALL,L"Start All");
         AppendMenuW(menu,MF_STRING,STOP_ALL,L"Stop All");AppendMenuW(menu,MF_SEPARATOR,0,nullptr);AppendMenuW(menu,MF_STRING,QUIT,L"Quit Lyrion Player");
         POINT point;GetCursorPos(&point);SetForegroundWindow(window);
         UINT command=TrackPopupMenu(menu,TPM_RETURNCMD|TPM_NONOTIFY,point.x,point.y,0,window,nullptr);
         DestroyMenu(menu);PostMessageW(window,WM_NULL,0,0);
         if(command==EDIT){show();return;}
-        if(menuActions.count(command)){
-            auto [id,a]=menuActions.at(command);
-            if(a==0){if(manager->runtime[id].desired)manager->stop(id);else manager->start(id);}
-            if(a==1){auto url=manager->url(id);if(url.empty())throw std::runtime_error("Start the instance first or set its web URL");tray::platform::openURL(url);}
-            if(a==2){auto path=manager->logPath(id);if(!tray::fs::exists(path))throw std::runtime_error("No log exists yet. Start the instance first.");tray::platform::openFile(path);}
-            if(a==3)if(auto i=manager->find(id))edit(*i);
-        }else if(command)action(command);
+        if(command)action(command);
     }
 };
 LRESULT CALLBACK EditorProc(HWND window,UINT message,WPARAM w,LPARAM l) {
@@ -219,6 +210,7 @@ LRESULT CALLBACK MainProc(HWND window,UINT message,WPARAM w,LPARAM l) {
         if(message==WM_ENDSESSION&&w){DestroyWindow(window);return 0;}
         if(message==WM_DESTROY){Shell_NotifyIconW(NIM_DELETE,&app->icon);PostQuitMessage(0);return 0;}
         if(message==WM_COMMAND){app->action(LOWORD(w));return 0;}
+        if(message==WM_NOTIFY&&((NMHDR *)l)->hwndFrom==app->table&&((NMHDR *)l)->code==LVN_ITEMCHANGED){app->updatePlayerButtons();return 0;}
         if(message==WM_NOTIFY&&((NMHDR *)l)->hwndFrom==app->table&&((NMHDR *)l)->code==NM_DBLCLK){app->action(EDIT);return 0;}
         if(message==TRAY_MESSAGE){if(LOWORD(l)==WM_CONTEXTMENU)app->menu();else if(LOWORD(l)==NIN_SELECT||LOWORD(l)==NIN_KEYSELECT)app->show();return 0;}
         if(message==WM_TIMER){
@@ -256,7 +248,7 @@ int WINAPI wWinMain(HINSTANCE instance,HINSTANCE,LPWSTR command,int) {
         cls.lpszClassName=MAIN_CLASS;cls.lpfnWndProc=MainProc;RegisterClassExW(&cls);
         cls.lpszClassName=EDITOR_CLASS;cls.lpfnWndProc=EditorProc;RegisterClassExW(&cls);
         app.window=CreateWindowExW(0,MAIN_CLASS,L"Lyrion Player - Settings",WS_OVERLAPPED|WS_CAPTION|WS_SYSMENU|WS_MINIMIZEBOX,
-            CW_USEDEFAULT,CW_USEDEFAULT,app.px(820),app.px(465),nullptr,nullptr,instance,&app);
+            CW_USEDEFAULT,CW_USEDEFAULT,app.px(940),app.px(465),nullptr,nullptr,instance,&app);
         if(!app.window)throw std::runtime_error("Could not create tray settings window");
         app.build();app.refresh();
         if(smoke){app.edit(app.manager->draft());if(!app.choice||!app.mac)throw std::runtime_error("Could not create instance editor");app.closeEditor();tray::fs::remove_all(directory);DestroyWindow(app.window);}
