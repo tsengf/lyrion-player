@@ -147,7 +147,7 @@ void Manager::launch(const Instance &i, Runtime &r) {
     try {
         fs::create_directories(platform::logDir());
         r.child = platform::spawn(platform::backend(), args, logPath(i.id));
-        r.state = "Starting"; r.error.clear(); r.audio.clear(); r.buffer.clear(); r.host.clear();
+        r.state = "Starting"; r.error.clear(); r.audio.clear(); r.buffer.clear(); r.host.clear(); r.port = 0;
     } catch (const std::exception &e) { r.desired = false; r.state = "Error"; r.error = e.what(); }
 }
 void Manager::start(const std::string &id) {
@@ -184,6 +184,13 @@ std::string Manager::status(const std::string &id) const {
     if (!it->second.error.empty()) text += " — " + it->second.error;
     return text;
 }
+std::string Manager::serverAddress(const std::string &id) const {
+    auto i = find(id); if (!i) return {};
+    if (!i->host.empty()) return i->host + ":" + std::to_string(i->port);
+    auto r = runtime.find(id);
+    if (r == runtime.end() || r->second.host.empty() || !r->second.port) return {};
+    return r->second.host + ":" + std::to_string(r->second.port);
+}
 std::string Manager::url(const std::string &id) const {
     auto i = find(id); if (!i) return {};
     if (!i->webURL.empty()) return i->webURL;
@@ -212,7 +219,11 @@ void Manager::tick() {
                         static const std::map<std::string, std::string> names = {{"discovering","Discovering"},
                             {"connecting","Connecting"}, {"connected","Connected"}, {"disconnected","Connecting"}, {"stopped","Stopped"}};
                         if (names.count(state)) r.state = names.at(state);
-                        if (event.contains("host") && !event.at("host").get<std::string>().empty()) r.host = event.at("host");
+                        if (state == "discovering") { r.host.clear(); r.port = 0; }
+                        if (event.contains("host") && !event.at("host").get<std::string>().empty()) {
+                            auto port = parsePort(event.at("port").dump());
+                            r.host = event.at("host"); r.port = port;
+                        }
                     }
                 } catch (...) { /* Diagnostics remain in the instance log. */ }
             }

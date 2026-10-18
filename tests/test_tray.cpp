@@ -55,6 +55,8 @@ int main() {
         invalid=a;invalid.mac="01:00:00:00:00:01";fails([&]{tray::validate(invalid);});
         fails([]{tray::parsePort("4294970779");});
         fails([]{tray::parsePort("-1");});
+        require(manager.serverAddress(a.id)=="192.168.1.9:3483","Manual server address missing");
+        require(manager.serverAddress(b.id).empty(),"Automatic server appeared before discovery");
         manager.startAll();
         require(children.size()==2,"Did not start both instances");
         require(arguments[0][0]=="--managed","Backend is not owned by tray");
@@ -62,6 +64,12 @@ int main() {
         manager.tick();
         require(manager.status(a.id)=="Connected","Connection event not reflected in UI model");
         require(manager.url(a.id)=="http://192.168.1.9:9000","Incorrect browser URL");
+        children[1]->output="{\"version\":1,\"type\":\"connection\",\"state\":\"connected\",\"host\":\"192.168.1.20\",\"port\":3483}\n";
+        manager.tick();require(manager.serverAddress(b.id)=="192.168.1.20:3483","Discovered IP and port missing");
+        children[1]->output="{\"version\":1,\"type\":\"connection\",\"state\":\"connected\",\"host\":\"192.168.1.21\",\"port\":3484}\n";
+        manager.tick();require(manager.serverAddress(b.id)=="192.168.1.21:3484","Changed discovered IP and port missing");
+        children[1]->output="{\"version\":1,\"type\":\"connection\",\"state\":\"discovering\",\"host\":\"\",\"port\":3483}\n";
+        manager.tick();require(manager.serverAddress(b.id).empty(),"Rediscovery retained a stale IP");
         children[0]->output="{\"version\":1,\"type\":\"audio\",\"state\":\"unavailable\"}\n";
         manager.tick();require(manager.status(a.id).find("audio unavailable")!=std::string::npos,"Audio state missing");
         manager.stop(a.id);manager.tick();

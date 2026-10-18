@@ -18,6 +18,7 @@ struct Server { std::string name, host, uuid; unsigned port = 3483, webPort = 90
 struct Runtime {
     std::unique_ptr<Child> child;
     std::string state = "Stopped", audio, host, buffer, error;
+    unsigned port = 0;
     bool desired = false, stopping = false, editing = false;
     std::chrono::steady_clock::time_point deadline{}, retry{};
     std::deque<std::chrono::steady_clock::time_point> failures;
@@ -56,6 +57,7 @@ public:
     bool stopped() const;
     fs::path logPath(const std::string &) const;
     std::string status(const std::string &) const;
+    std::string serverAddress(const std::string &) const;
     std::string url(const std::string &) const;
     void scan();
     void importLegacy(Legacy);
