@@ -14,13 +14,13 @@ also pinned to that interface. For example, a Wi-Fi address of `192.168.1.144/24
 produces a probe to `192.168.1.255`. Interfaces are refreshed on each retry;
 loopback and point-to-point VPN interfaces are excluded from the LAN list.
 A server on the same Mac or PC can be found even without LAN access. The first valid reply
-selects the server; use `--server host[:port]` to choose a particular server when more
-than one is available or it uses a nonstandard SlimProto port.
+selects the server. In Configure player, choose a discovered server or Manual
+address to select a particular server or use a nonstandard SlimProto port.
 
 This improves discovery when a VPN changes the default broadcast route. It cannot
-override VPN policies that block LAN traffic. Use `--debug slimproto=debug` to see
-the interface and destination of each discovery probe. If direct access works
-but broadcasts remain filtered, specify the server with `--server`.
+override VPN policies that block LAN traffic. If direct access works but broadcasts
+remain filtered, select Manual address in Configure player and enter the server
+host and port.
 
 Player uses the signed-in user's **system default audio output**. Changing that
 output while music is playing reroutes audio through Core Audio on macOS or WASAPI
@@ -181,61 +181,9 @@ purposes. CI builds separate macOS ARM64/Intel and Windows x64 ZIP artifacts.
 Dependencies can set a higher minimum OS version than the app itself; use dependency
 builds targeting your oldest supported OS when distributing broadly.
 
-Omit `-DPLAYER_BUILD_TRAY=ON` for the original headless build. Python is only needed
-for tests.
+Python is only needed for tests.
 
-## Multiple instances
-
-In the tray app, use Add once per server; identities and child processes are managed
-automatically. All instances follow the same default output, and simultaneous audio
-mixes. The following examples are for manual/headless use.
-
-Run one process per server. Give every instance a distinct name and a stable,
-unique `--mac` identifier. The identifier uses MAC-address notation to identify the
-software player to Lyrion; it does not change your network adapter's address.
-Without `--mac`, instances on the same computer can inherit the same identity.
-Use `--server` to select each server explicitly rather than relying on discovery.
-Replace the example server IP addresses with your own.
-
-All instances follow the same system default audio output. If more than one
-instance plays at once, their audio mixes. Each has its own connection and queue
-on its selected server; there is no combined library.
-
-### Run two players manually
-
-On macOS, run these commands in separate terminals:
-
-```sh
-./build/player --name "My Mac - Server A" --server 192.168.1.10 --mac 02:00:00:00:00:01
-./build/player --name "My Mac - Server B" --server 192.168.1.20 --mac 02:00:00:00:00:02
-```
-
-Stop each instance with Ctrl+C in its terminal. On Windows, launch both from
-PowerShell:
-
-```powershell
-.\build\Release\player.exe --name 'My PC - Server A' --server 192.168.1.10 --mac 02:00:00:00:00:01
-.\build\Release\player.exe --name 'My PC - Server B' --server 192.168.1.20 --mac 02:00:00:00:00:02
-```
-
-## Playback and options
-
-```sh
-player --name "Office"                          # Discover Lyrion
-player --name "Office" --server 192.168.1.10      # Connect directly
-player --name "Office" --debug output=info       # Log device recovery and rerouting
-player --list-devices                           # Show the default-output policy
-```
-
-Player supports long option names in the examples above and retains Squeezelite's
-short flags for compatibility. Use `player --help` to see available options.
-CMake and macOS system commands retain short flags where no long form exists.
-The audio adapter requires `default`; omit `--output`, `--audio-params`, and
-`--rates`. Fixed-device, exclusive-mode, and hardware
-format controls from upstream do not apply. Use `--mac 02:xx:xx:xx:xx:xx` with a
-unique locally administered MAC-style identifier if you need a stable player
-identity independent of network interfaces. Do not run two copies with the same
-identifier against one server.
+## Playback
 
 Native decoding: FLAC, MP3, Ogg Vorbis, and PCM (including WAV/AIFF). Other formats
 require Lyrion transcoding. Optional AAC support requires faad2 and
