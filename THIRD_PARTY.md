@@ -9,7 +9,7 @@
   remain available as reference but are not compiled by Player.
 - Local changes to `main.c`: identify the executable as Player, default the
   resampling recipe to `hX`, add long command-line aliases, and adjust help for
-  the native backend, and add managed-mode IPC and a network-identity helper. The build defines `MODEL_NAME=Player`.
+  the native backend, and add managed-mode IPC. The build defines `MODEL_NAME=Player`.
 - Player uses its own native output adapter in place of `output_pa.c`.
 - Local changes to `slimproto.c`: use Player's discovery adapter for localhost,
   general broadcast, and source-bound per-interface LAN probes, and allow an

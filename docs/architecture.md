@@ -52,8 +52,8 @@ reinitialization there, without registering its own notification callbacks.
 
 Shutdown signals the worker, joins it, and waits for miniaudio teardown to stop
 all callbacks before freeing the Squeezelite output buffer. User-session process
-lifetime is owned by the tray application for GUI users. The legacy headless
-installers use launchd or Task Scheduler and are never invoked by the build or tests.
+lifetime is owned by the tray application for GUI users. Headless command-line
+players run for the lifetime of the process that launched them.
 
 The silent test executable uses the same protocol, decoder, resampler, adapter,
 and lifecycle code with only miniaudio's backend selection changed. It verifies
@@ -85,6 +85,6 @@ shared discovery adapter
 has separate first-response and collect-all APIs. NAME/UUID/JSON fields identify
 servers and their web ports, with deduplication across interfaces in the manager.
 
-The tray app never creates per-instance startup jobs or imports legacy startup
-entries. Remove old script-created registrations manually before configuring
-those players in Settings.
+The tray app never creates per-instance startup jobs. Start at login registers
+only the tray application. Old per-player startup registrations from previous
+versions must be removed manually before configuring those players in Settings.

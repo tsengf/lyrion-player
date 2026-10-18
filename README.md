@@ -137,10 +137,9 @@ open "build/Lyrion Player.app"
 
 The MacPorts resampler port is named [`soxr`](https://ports.macports.org/port/soxr/).
 The commands assume the default MacPorts prefix, `/opt/local`, and that
-`/opt/local/bin` is on your `PATH`. Python is selected explicitly for the tests;
-you can also use `/opt/local/bin/python3.13` for the startup script below without
-changing your system's default Python. Use a fresh build directory when switching
-between Homebrew and MacPorts so CMake does not reuse cached dependency paths.
+`/opt/local/bin` is on your `PATH`. Python is selected explicitly for the tests.
+Use a fresh build directory when switching between Homebrew and MacPorts so CMake
+does not reuse cached dependency paths.
 
 ### Windows
 
@@ -183,62 +182,7 @@ Dependencies can set a higher minimum OS version than the app itself; use depend
 builds targeting your oldest supported OS when distributing broadly.
 
 Omit `-DPLAYER_BUILD_TRAY=ON` for the original headless build. Python is only needed
-for tests and the optional legacy macOS registration script.
-
-## Command-line startup (legacy alternative)
-
-The following scripts remain available for headless use. They create individual
-startup entries and are independent of the tray app. For tray-managed instances,
-use the app's Start at login setting. Remove any old script-created startup
-entries before adding the same players in Settings to avoid duplicate players.
-
-
-The background player runs in your own user session so it follows your audio
-selection. It starts when you sign in, restarts after a crash, and stops when you
-sign out. On macOS this is a launchd LaunchAgent. On Windows it is a per-user
-Task Scheduler task using an interactive token, rather than a machine-wide SCM
-service. Neither installation requires administrator privileges.
-
-The scripts start playback immediately after installation; they do not change the
-system's default device. Stop any foreground copy first to avoid duplicate players.
-
-### macOS
-
-Install to a permanent location before registering:
-
-```sh
-cmake --install build --prefix "$HOME/.local"
-python3 scripts/macos/service.py --name "My Mac" --server 192.168.1.10
-```
-
-Omit `--server` for discovery. Use `--executable /absolute/path/to/player` to select
-another location. Uninstall automatic startup with:
-
-```sh
-python3 scripts/macos/service.py --uninstall
-```
-
-Logs: `~/Library/Logs/lyrion-player/player.log`.
-Status: `launchctl print gui/$(id -u)/org.lyrion.player`.
-
-### Windows
-
-Keep the executable and codec DLLs in a permanent directory, then register it:
-
-```powershell
-.\scripts\windows\service.ps1 -Executable 'C:\Users\you\AppData\Local\Player\player.exe' -Name 'My PC' -Server '192.168.1.10'
-```
-
-Omit `-Server` for discovery. Uninstall automatic startup with:
-
-```powershell
-.\scripts\windows\service.ps1 -Uninstall
-```
-
-Logs: `%LOCALAPPDATA%\lyrion-player\player.log`. Task Scheduler shows the task as
-`LyrionPlayer-<your user SID>`. Windows retries failed runs every minute, up to
-999 times per failure sequence. Allow Player through your firewall on your private
-network so it can discover/connect to Lyrion.
+for tests.
 
 ## Multiple instances
 
@@ -273,143 +217,6 @@ PowerShell:
 .\build\Release\player.exe --name 'My PC - Server A' --server 192.168.1.10 --mac 02:00:00:00:00:01
 .\build\Release\player.exe --name 'My PC - Server B' --server 192.168.1.20 --mac 02:00:00:00:00:02
 ```
-
-### Install multiple macOS startup entries
-
-Use `service.py` once for each instance. `--instance` selects a separate startup
-entry, and `--mac` supplies its stable player identity. Named instances require
-`--mac`; give each instance a different identifier. Replace the example server
-addresses and names before running these commands. Stop any foreground copies
-first. No `sudo` is needed.
-
-Install the binary to a permanent location:
-
-```sh
-cmake --install build --prefix "$HOME/.local"
-```
-
-If replacing a previously installed default service, remove it first:
-
-```sh
-python3 scripts/macos/service.py --uninstall
-```
-
-Install and start Server A's player:
-
-```sh
-python3 scripts/macos/service.py --instance server-a \
-  --name "My Mac - Server A" --server 192.168.1.10 --mac 02:00:00:00:00:01
-```
-
-Install and start Server B's player separately:
-
-```sh
-python3 scripts/macos/service.py --instance server-b \
-  --name "My Mac - Server B" --server 192.168.1.20 --mac 02:00:00:00:00:02
-```
-
-For MacPorts, you can replace `python3` with `/opt/local/bin/python3.13`.
-Use `--executable /absolute/path/to/player` if the binary is elsewhere. Both
-instances start immediately and at subsequent sign-ins. Running an install
-command again replaces and restarts only that named instance; supply its full
-configuration again, including the same `--mac` identifier.
-
-The LaunchAgents are `org.lyrion.player.server-a` and
-`org.lyrion.player.server-b`. Check each instance's status:
-
-```sh
-launchctl print "gui/$(id -u)/org.lyrion.player.server-a"
-launchctl print "gui/$(id -u)/org.lyrion.player.server-b"
-```
-
-Each instance has its own log. Ctrl+C stops following the logs without stopping
-the players:
-
-```sh
-tail -f "$HOME/Library/Logs/lyrion-player/player-server-a.log" "$HOME/Library/Logs/lyrion-player/player-server-b.log"
-```
-
-Stop and uninstall Server A's startup entry, retaining the binary and logs:
-
-```sh
-python3 scripts/macos/service.py --instance server-a --uninstall
-```
-
-Stop and uninstall Server B's startup entry separately:
-
-```sh
-python3 scripts/macos/service.py --instance server-b --uninstall
-```
-
-Omitting `--instance` continues to manage the original `org.lyrion.player` service
-and `player.log`; it does not update or uninstall any named instance.
-
-### Install multiple Windows startup entries
-
-Use `service.ps1` once for each instance, just like `service.py` on macOS.
-`-Instance` selects a separate startup task, and `-Mac` supplies its stable player
-identity. Named instances require `-Mac`; give every instance a different
-identifier. Replace the example server addresses and names before running the
-commands. Close any foreground copies first.
-
-Keep `player.exe` and its codec DLLs together in a permanent directory. The
-commands below use the default location, `%LOCALAPPDATA%\Player\player.exe`.
-If your executable is elsewhere, add `-Executable 'C:\path\to\player.exe'` to
-each install command. Run PowerShell as the user who will play music; no
-administrator privileges are needed.
-
-If replacing a previously installed default task, remove it first:
-
-```powershell
-.\scripts\windows\service.ps1 -Uninstall
-```
-
-Install and start Server A's player:
-
-```powershell
-.\scripts\windows\service.ps1 -Instance server-a `
-  -Name 'My PC - Server A' -Server 192.168.1.10 -Mac 02:00:00:00:00:01
-```
-
-Install and start Server B's player separately:
-
-```powershell
-.\scripts\windows\service.ps1 -Instance server-b `
-  -Name 'My PC - Server B' -Server 192.168.1.20 -Mac 02:00:00:00:00:02
-```
-
-Both instances start immediately and at subsequent sign-ins. Running an install
-command again replaces and restarts only that named instance; supply its full
-configuration again, including the same `-Mac` identifier.
-
-Task Scheduler shows the entries as `LyrionPlayer-<your user SID>-server-a` and
-`LyrionPlayer-<your user SID>-server-b`. List their status from PowerShell:
-
-```powershell
-Get-ScheduledTask -TaskName "LyrionPlayer-$([System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value)-*"
-```
-
-Each instance has its own log. Read either log with:
-
-```powershell
-Get-Content "$env:LOCALAPPDATA\lyrion-player\player-server-a.log" -Tail 30
-Get-Content "$env:LOCALAPPDATA\lyrion-player\player-server-b.log" -Tail 30
-```
-
-Stop and uninstall Server A's startup entry, retaining the executable and logs:
-
-```powershell
-.\scripts\windows\service.ps1 -Instance server-a -Uninstall
-```
-
-Stop and uninstall Server B's startup entry separately:
-
-```powershell
-.\scripts\windows\service.ps1 -Instance server-b -Uninstall
-```
-
-Omitting `-Instance` continues to manage the original `LyrionPlayer-<your user SID>`
-task and `player.log`; it does not update or uninstall any named instance.
 
 ## Playback and options
 
@@ -459,24 +266,17 @@ tests include replies received only on a separate source-bound interface socket.
 They use a temporary port and simulated interface through test-only overrides;
 production always probes
 port 3483. Tests never play sound or connect to your real music server.
-A separate service test checks that named macOS entries can be installed,
-updated, and removed independently while keeping the original default entry
-compatible. It writes only to a temporary directory and mocks `launchctl`;
-it does not install or start services on your machine.
-On Windows, an additional PowerShell test checks independent task installation,
-updates, removal, and argument validation using in-memory substitutes for Task
-Scheduler and filesystem operations.
 Broadcast calculation tests also cover different subnet sizes and reject masks
 without a usable subnet broadcast. For a manual UDP-only check against real
 servers, run `./build/player_discovery_test --probe`; it logs the interface probes
 and first replying server without registering a player or playing audio.
 Managed-mode tests verify JSON status, graceful stop, stdin EOF, and connected
 shutdown against mock servers. Shared tray tests cover configuration, identities,
-independent lifecycle, bounded restarts and migration failures. Native process tests
-exercise real inherited pipes, independent stop and force termination with the
+independent lifecycle, bounded restarts and compatibility with older configurations.
+Native process tests exercise real inherited pipes, independent stop and force termination with the
 silent backend. Native UI smoke tests create the settings/editor controls using a
 temporary profile. Metadata discovery tests collect multiple mock replies. None of
-these tests modify sign-in registrations or import real user services.
+these tests modify sign-in registrations.
 A CI workflow builds/tests/packages the native apps on macOS and Windows.
 
 Physical device switching requires manual validation on both systems:
@@ -488,10 +288,12 @@ Physical device switching requires manual validation on both systems:
    recovery without restarting Player.
 4. Switch between devices configured for different sample rates, skip tracks,
    adjust volume, and test sleep/wake.
-5. Install startup, sign out/in, verify one player appears, then uninstall startup.
+5. Enable Start at login, sign out/in, verify configured players appear, then
+   disable Start at login.
 
-Hardware rerouting, real sign-in registration, and migration of real OS entries
-require manual verification on each target system. See [architecture](docs/architecture.md) for the ownership and recovery model.
+Hardware rerouting and real sign-in registration require manual verification on
+each target system. See [architecture](docs/architecture.md) for the ownership and
+recovery model.
 
 ## License and upstream
 
