@@ -8,11 +8,6 @@
 
 namespace tray {
 namespace fs = std::filesystem;
-struct Legacy {
-    std::string token, label, name, host, mac, error, definition;
-    unsigned port = 3483;
-    bool autoStart = true;
-};
 class Child {
 public:
     virtual ~Child() = default;
@@ -33,11 +28,5 @@ void openURL(const std::string &);
 // Return "off", "on", or "approval".
 std::string loginStatus();
 void setLogin(bool enabled);
-std::vector<Legacy> legacyServices();
-// Back up then remove only the selected user-owned startup entry.
-void removeLegacy(const Legacy &);
 }
-std::string capture(const fs::path &, const std::vector<std::string> &);
-Legacy parseLegacy(const std::string &token, const std::string &label,
-                   const std::vector<std::string> &args);
 }

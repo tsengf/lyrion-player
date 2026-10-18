@@ -63,6 +63,5 @@ public:
     Server automaticServer(const std::string &) const;
     std::string url(const std::string &) const;
     void scan();
-    void importLegacy(Legacy);
 };
 }

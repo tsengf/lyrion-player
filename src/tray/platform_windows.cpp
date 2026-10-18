@@ -4,28 +4,15 @@
 #include <windows.h>
 #include <shellapi.h>
 #include <shlobj.h>
-#include <sddl.h>
-#include <taskschd.h>
-#include <wrl/client.h>
 #include "platform.hpp"
 #include <algorithm>
-#include <chrono>
-#include <fstream>
-#include <thread>
-#include <cctype>
 
 namespace tray::platform {
-using Microsoft::WRL::ComPtr;
 static std::wstring wide(const std::string &s) {
     if (s.empty()) return {};
     int n = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, s.data(), (int)s.size(), nullptr, 0);
     if (!n) throw std::runtime_error("Invalid UTF-8");
     std::wstring out(n, L'\0'); MultiByteToWideChar(CP_UTF8, 0, s.data(), (int)s.size(), out.data(), n); return out;
-}
-static std::string utf(const std::wstring &s) {
-    if (s.empty()) return {};
-    int n = WideCharToMultiByte(CP_UTF8, 0, s.data(), (int)s.size(), nullptr, 0, nullptr, nullptr);
-    std::string out(n, '\0'); WideCharToMultiByte(CP_UTF8, 0, s.data(), (int)s.size(), out.data(), n, nullptr, nullptr); return out;
 }
 static void check(HRESULT result) {
     if (FAILED(result)) throw std::runtime_error("Windows operation failed (code " + std::to_string((unsigned long)result) + ")");
@@ -171,85 +158,5 @@ void setLogin(bool enabled) {
     } else { result = RegDeleteValueW(key, L"LyrionPlayerTray"); if (result == ERROR_FILE_NOT_FOUND) result = ERROR_SUCCESS; }
     RegCloseKey(key);
     if (result != ERROR_SUCCESS) throw std::runtime_error("Could not update user startup settings");
-}
-static std::wstring currentSid() {
-    HANDLE token;
-    if (!OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &token)) throw std::runtime_error("Could not read user identity");
-    DWORD size = 0; GetTokenInformation(token, TokenUser, nullptr, 0, &size);
-    std::vector<BYTE> bytes(size);
-    BOOL ok = GetTokenInformation(token, TokenUser, bytes.data(), size, &size); CloseHandle(token);
-    if (!ok) throw std::runtime_error("Could not read user identity");
-    LPWSTR sid = nullptr;
-    if (!ConvertSidToStringSidW(reinterpret_cast<TOKEN_USER *>(bytes.data())->User.Sid, &sid)) throw std::runtime_error("Could not read user SID");
-    std::wstring result(sid); LocalFree(sid); return result;
-}
-static ComPtr<ITaskFolder> taskFolder() {
-    ComPtr<ITaskService> service;
-    check(CoCreateInstance(CLSID_TaskScheduler, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&service)));
-    VARIANT empty; VariantInit(&empty);
-    check(service->Connect(empty, empty, empty, empty));
-    ComPtr<ITaskFolder> root;
-    BSTR path = SysAllocString(L"\\"); auto result = service->GetFolder(path, &root); SysFreeString(path); check(result);
-    return root;
-}
-static std::string takeBstr(BSTR value) { auto result = value ? utf(value) : ""; SysFreeString(value); return result; }
-std::vector<Legacy> legacyServices() {
-    auto root = taskFolder();
-    ComPtr<IRegisteredTaskCollection> tasks; check(root->GetTasks(TASK_ENUM_HIDDEN, &tasks));
-    LONG count = 0; check(tasks->get_Count(&count));
-    auto prefix = L"LyrionPlayer-" + currentSid();
-    std::vector<Legacy> result;
-    for (LONG index = 1; index <= count; ++index) {
-        VARIANT key; VariantInit(&key); key.vt = VT_I4; key.lVal = index;
-        ComPtr<IRegisteredTask> task; check(tasks->get_Item(key, &task));
-        BSTR text = nullptr; check(task->get_Name(&text)); auto name = takeBstr(text);
-        auto wname = wide(name);
-        if (wname != prefix && wname.rfind(prefix + L"-", 0)) continue;
-        ComPtr<ITaskDefinition> definition; check(task->get_Definition(&definition));
-        ComPtr<IActionCollection> actions; check(definition->get_Actions(&actions));
-        LONG countActions = 0; check(actions->get_Count(&countActions)); if (countActions != 1) continue;
-        ComPtr<IAction> action; check(actions->get_Item(1, &action));
-        ComPtr<IExecAction> exec; if (FAILED(action.As(&exec))) continue;
-        BSTR path = nullptr, arguments = nullptr;
-        check(exec->get_Path(&path)); check(exec->get_Arguments(&arguments));
-        auto exe = takeBstr(path); auto args = takeBstr(arguments);
-        auto file = fs::u8path(exe).filename().u8string();
-        std::transform(file.begin(), file.end(), file.begin(), [](unsigned char c) { return (char)std::tolower(c); });
-        if (file != "player.exe") continue;
-        auto command = quote(wide(exe)) + L" " + wide(args);
-        int argc = 0; auto argv = CommandLineToArgvW(command.c_str(), &argc); if (!argv) continue;
-        std::vector<std::string> tokens;
-        for (int i = 0; i < argc; ++i) tokens.push_back(utf(argv[i])); LocalFree(argv);
-        auto entry = parseLegacy(name, name, tokens);
-        text = nullptr; check(task->get_Xml(&text)); entry.definition = takeBstr(text);
-        VARIANT_BOOL enabled; check(task->get_Enabled(&enabled)); entry.autoStart = enabled == VARIANT_TRUE;
-        result.push_back(std::move(entry));
-    }
-    return result;
-}
-void removeLegacy(const Legacy &entry) {
-    auto entries = legacyServices();
-    auto found = std::find_if(entries.begin(), entries.end(), [&](const auto &i) { return i.token == entry.token && i.definition == entry.definition; });
-    if (found == entries.end()) throw std::runtime_error("Startup task changed; refresh the import list");
-    auto backups = configDir() / L"import-backups"; fs::create_directories(backups);
-    auto backup = backups / fs::u8path(entry.token + "-" + std::to_string(GetTickCount64()) + ".xml");
-    auto xml = entry.definition;
-    auto encoding = xml.find("encoding=\"UTF-16\"");
-    if (encoding != std::string::npos) xml.replace(encoding, 17, "encoding=\"UTF-8\"");
-    { std::ofstream out(backup, std::ios::binary); out << xml; out.flush(); if (!out) throw std::runtime_error("Could not back up startup task"); }
-    auto root = taskFolder();
-    BSTR name = SysAllocString(wide(entry.token).c_str());
-    ComPtr<IRegisteredTask> task; auto result = root->GetTask(name, &task);
-    if (FAILED(result)) { SysFreeString(name); check(result); }
-    TASK_STATE state; check(task->get_State(&state));
-    if (state == TASK_STATE_RUNNING) {
-        result = task->Stop(0);
-        if (FAILED(result)) { SysFreeString(name); check(result); }
-        auto end = std::chrono::steady_clock::now() + std::chrono::seconds(5);
-        do { std::this_thread::sleep_for(std::chrono::milliseconds(50)); check(task->get_State(&state)); }
-        while (state == TASK_STATE_RUNNING && std::chrono::steady_clock::now() < end);
-        if (state == TASK_STATE_RUNNING) { SysFreeString(name); throw std::runtime_error("Existing player did not stop"); }
-    }
-    result = root->DeleteTask(name, 0); SysFreeString(name); check(result);
 }
 }

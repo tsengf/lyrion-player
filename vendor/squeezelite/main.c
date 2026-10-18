@@ -392,11 +392,6 @@ int main(int argc, char **argv) {
 			++optind;
 			continue;
 		}
-		if (!strcmp(argv[optind], "--print-mac")) {
-			get_mac(mac);
-			printf("%02x:%02x:%02x:%02x:%02x:%02x\n", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
-			return is_mac_nz(mac) ? 0 : 1;
-		}
 		char *opt = player_option(argv[optind] + 1);
 		if (strstr("oabcCdefmMnNpPrsZ"
 #if ALSA

@@ -6,7 +6,6 @@
 #include <random>
 #include <regex>
 #include <sstream>
-#include <thread>
 #include <cctype>
 extern "C" {
 #include "discovery.h"
@@ -156,7 +155,7 @@ void Manager::start(const std::string &id) {
     if (r.child) return;
     if (i->importPending) {
         r.desired = false; r.state = "Error";
-        r.error = "Import is incomplete. Retry Import to remove the old startup entry first.";
+        r.error = "This player has an incomplete migration. Remove the old startup entry, then remove and recreate this player.";
         return;
     }
     r.desired = true; r.stopping = false; r.failures.clear();
@@ -287,49 +286,5 @@ void Manager::scan() {
             [](void *p) { return static_cast<ScanContext *>(p)->cancel->load() ? 1 : 0; });
         return ctx.servers;
     });
-}
-std::string capture(const fs::path &binary, const std::vector<std::string> &args) {
-    auto child = platform::spawn(binary, args, {});
-    auto deadline = Clock::now() + std::chrono::seconds(5);
-    std::string output;
-    while (child->alive() && Clock::now() < deadline) { output += child->read(); std::this_thread::sleep_for(std::chrono::milliseconds(10)); }
-    output += child->read();
-    if (child->alive()) { child->kill(); throw std::runtime_error("Helper command timed out"); }
-    if (child->exitCode() != 0) throw std::runtime_error("Helper command failed; existing startup entry was retained");
-    while (!output.empty() && (output.back() == '\n' || output.back() == '\r')) output.pop_back();
-    return output;
-}
-Legacy parseLegacy(const std::string &token, const std::string &label, const std::vector<std::string> &args) {
-    Legacy result; result.token = token; result.label = label; result.name = label;
-    for (size_t pos = 1; pos < args.size(); ++pos) {
-        auto key = args[pos];
-        if (pos + 1 == args.size()) { result.error = "Missing value for " + key; break; }
-        auto value = args[++pos];
-        if (key == "-n" || key == "--name") result.name = value;
-        else if (key == "-m" || key == "--mac") result.mac = value;
-        else if (key == "-s" || key == "--server") {
-            auto colon = value.find(':'); result.host = value.substr(0, colon);
-            if (colon != std::string::npos) {
-                try { result.port = parsePort(value.substr(colon + 1)); } catch (...) { result.error = "Invalid server port"; }
-            }
-        } else if (key != "-d" && key != "--debug" && key != "-f" && key != "--logfile") {
-            result.error = "Unsupported launch option: " + key; break;
-        }
-    }
-    return result;
-}
-void Manager::importLegacy(Legacy legacy) {
-    if (!legacy.error.empty()) throw std::runtime_error(legacy.error);
-    Instance i = draft(); i.name = legacy.name; i.host = legacy.host; i.port = legacy.port; i.autoStart = false;
-    i.mac = legacy.mac.empty() ? capture(platform::backend(), {"--print-mac"}) : legacy.mac;
-    std::transform(i.mac.begin(), i.mac.end(), i.mac.begin(), [](unsigned char c) { return (char)std::tolower(c); });
-    for (const auto &old : instances) if (old.importPending && old.mac == i.mac) i.id = old.id;
-    i.importPending = true;
-    validate(i);
-    save(i); // Persist a stopped draft before altering OS startup registration.
-    try { platform::removeLegacy(legacy); }
-    catch (...) { throw std::runtime_error("Import saved as a stopped draft, but old startup removal failed. Use Import again to retry; this draft cannot start until migration succeeds."); }
-    i.importPending = false; i.autoStart = legacy.autoStart; save(i);
-    start(i.id);
 }
 }

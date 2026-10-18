@@ -9,7 +9,6 @@ tray::fs::path root;
 struct FakeState { bool running = true, stopped = false, killed = false; int code = 0; std::string output; };
 std::vector<std::shared_ptr<FakeState>> children;
 std::vector<std::vector<std::string>> arguments;
-bool removalFails = false;
 class FakeChild : public tray::Child {
     std::shared_ptr<FakeState> state;
 public:
@@ -32,8 +31,6 @@ void openFile(const fs::path &){}
 void openURL(const std::string &){}
 std::string loginStatus(){return "off";}
 void setLogin(bool){}
-std::vector<Legacy> legacyServices(){return {};}
-void removeLegacy(const Legacy &){if(removalFails)throw std::runtime_error("test failure");}
 std::unique_ptr<Child> spawn(const fs::path &,const std::vector<std::string> &args,const fs::path &){
     auto child=std::make_shared<FakeState>();
     arguments.push_back(args);children.push_back(child);
@@ -97,17 +94,13 @@ int main() {
         manager.quit();manager.tick();
         require(manager.stopped()&&children.back()->stopped,"Quit left a child running");
 
-        auto legacy=tray::parseLegacy("entry","Legacy",{"player","-n","Existing","-s","192.168.1.8:3484","-m","02:00:00:00:ff:01"});
-        require(legacy.error.empty()&&legacy.port==3484,"Legacy parameters were not parsed");
-        require(!tray::parseLegacy("e","x",{"player","--unknown","x"}).error.empty(),"Unknown legacy options were lost");
         {
-            tray::Manager imported(root/"imported");
-            removalFails=true;fails([&]{imported.importLegacy(legacy);});
-            require(imported.instances.size()==1&&!imported.instances[0].autoStart&&imported.stopped(),"Failed migration started a duplicate");
-            imported.start(imported.instances[0].id);require(imported.stopped(),"Incomplete import allowed a duplicate player");
-            removalFails=false;imported.importLegacy(legacy);
-            require(imported.instances.size()==1,"Retry duplicated the imported draft");
-            require(imported.instances[0].mac==legacy.mac&&children.back()->running,"Import lost player identity");
+            // Existing incomplete migration drafts must remain stopped after removal of the importer.
+            auto path=root/"blocked";
+            tray::Manager oldDraft(path);auto pending=oldDraft.draft();
+            pending.importPending=true;pending.autoStart=false;oldDraft.save(pending);
+            tray::Manager preserved(path);preserved.start(pending.id);
+            require(preserved.stopped()&&preserved.status(pending.id).find("Error")==0,"Old blocked draft started a duplicate player");
         }
         {
             auto bad=root/"invalid";tray::fs::create_directories(bad);
@@ -117,7 +110,7 @@ int main() {
             std::ifstream file(bad/"config.json");std::string value;file>>value;require(value=="invalid","Corrupt configuration was overwritten");
         }
         tray::fs::remove_all(root);
-        std::cout<<"Tray configuration, lifecycle and migration tests passed\n";
+        std::cout<<"Tray configuration, lifecycle and compatibility tests passed\n";
         return 0;
     }catch(const std::exception &e){
         tray::fs::remove_all(root);std::cerr<<e.what()<<"\n";return 1;

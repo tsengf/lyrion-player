@@ -8,12 +8,8 @@
 #include <sys/wait.h>
 #include <unistd.h>
 #include <crt_externs.h>
-#include <thread>
-#include <chrono>
 #include <cerrno>
 #include <cstring>
-#include <algorithm>
-#include <ctime>
 
 namespace tray::platform {
 static std::string utf(NSString *s) { return s ? std::string(s.UTF8String) : ""; }
@@ -106,51 +102,5 @@ void setLogin(bool enabled) {
     BOOL ok = enabled ? [SMAppService.mainAppService registerAndReturnError:&error]
                       : [SMAppService.mainAppService unregisterAndReturnError:&error];
     if (!ok) throw std::runtime_error(utf(error.localizedDescription));
-}
-std::vector<Legacy> legacyServices() {
-    std::vector<Legacy> result;
-    auto dir = fs::u8path(utf(NSHomeDirectory())) / "Library/LaunchAgents";
-    if (!fs::exists(dir)) return result;
-    for (const auto &entry : fs::directory_iterator(dir)) {
-        if (!fs::is_regular_file(entry.symlink_status()) || entry.path().extension() != ".plist") continue;
-        auto stem = entry.path().stem().u8string();
-        if (stem != "org.lyrion.player" && stem.rfind("org.lyrion.player.", 0)) continue;
-        NSData *data = [NSData dataWithContentsOfFile:ns(entry.path().u8string())];
-        if (!data) continue;
-        id value = [NSPropertyListSerialization propertyListWithData:data options:NSPropertyListImmutable format:nil error:nil];
-        if (![value isKindOfClass:NSDictionary.class]) continue;
-        NSArray *arguments = value[@"ProgramArguments"];
-        if (![arguments isKindOfClass:NSArray.class] || !arguments.count) continue;
-        std::vector<std::string> args;
-        for (id a in arguments) if ([a isKindOfClass:NSString.class]) args.push_back(utf(a));
-        if (args.size() != arguments.count || ![value[@"Label"] isKindOfClass:NSString.class]) continue;
-        if (args.empty() || fs::u8path(args[0]).filename() != "player" || utf(value[@"Label"]) != stem) continue;
-        auto legacy = parseLegacy(entry.path().u8string(), stem, args);
-        legacy.definition.assign((const char *)data.bytes, data.length);
-        result.push_back(std::move(legacy));
-    }
-    return result;
-}
-static int runCode(const std::vector<std::string> &args) {
-    auto child = spawn("/bin/launchctl", args, {});
-    auto end = std::chrono::steady_clock::now() + std::chrono::seconds(5);
-    while (child->alive() && std::chrono::steady_clock::now() < end) { child->read(); std::this_thread::sleep_for(std::chrono::milliseconds(20)); }
-    if (child->alive()) { child->kill(); throw std::runtime_error("launchctl timed out"); }
-    return child->exitCode();
-}
-void removeLegacy(const Legacy &legacy) {
-    auto current = legacyServices();
-    auto found = std::find_if(current.begin(), current.end(), [&](const auto &i) { return i.token == legacy.token && i.definition == legacy.definition; });
-    if (found == current.end()) throw std::runtime_error("Startup entry changed; refresh the import list");
-    auto backups = configDir() / "import-backups";
-    fs::create_directories(backups);
-    auto backup = backups / (legacy.label + "-" + std::to_string(time(nullptr)) + ".plist");
-    NSData *data = [NSData dataWithBytes:legacy.definition.data() length:legacy.definition.size()];
-    if (![data writeToFile:ns(backup.u8string()) atomically:YES]) throw std::runtime_error("Could not back up startup entry");
-    chmod(backup.c_str(), 0600);
-    auto target = "gui/" + std::to_string(getuid()) + "/" + legacy.label;
-    if (runCode({"bootout", target}) && !runCode({"print", target}))
-        throw std::runtime_error("Could not stop existing startup entry");
-    if (!fs::remove(fs::u8path(legacy.token))) throw std::runtime_error("Could not remove startup entry");
 }
 }
