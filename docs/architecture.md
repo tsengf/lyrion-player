@@ -85,6 +85,6 @@ shared discovery adapter
 has separate first-response and collect-all APIs. NAME/UUID/JSON fields identify
 servers and their web ports, with deduplication across interfaces in the manager.
 
-The tray app never creates per-instance startup jobs. Start at login registers
+The tray app never creates per-instance startup jobs. Start app at login registers
 only the tray application. Old per-player startup registrations from previous
 versions must be removed manually before configuring those players in Settings.

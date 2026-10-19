@@ -320,7 +320,7 @@ static std::string U(NSString *s) { return s ? std::string(s.UTF8String) : ""; }
     NSMenu *menu = [NSMenu new]; menu.delegate = self;
     NSMenuItem *configure = [menu addItemWithTitle:@"Settings…" action:@selector(openSettings:) keyEquivalent:@","];
     configure.target = self;
-    login = [menu addItemWithTitle:@"Start at login" action:@selector(changeLogin:) keyEquivalent:@""];
+    login = [menu addItemWithTitle:@"Start app at login" action:@selector(changeLogin:) keyEquivalent:@""];
     login.target = self;
     auto loginStatus = tray::platform::loginStatus();
     login.state = loginStatus == "on" ? NSControlStateValueOn : loginStatus == "approval" ? NSControlStateValueMixed : NSControlStateValueOff;

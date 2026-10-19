@@ -22,5 +22,5 @@ inline constexpr char webUrl[] =
     "discovered web port, or 9000 by default.";
 inline constexpr char startWithApp[] =
     "Start this player whenever the tray app opens. To open the app automatically when "
-    "you sign in, enable Start at login in the tray menu.";
+    "you sign in, enable Start app at login in the tray menu.";
 }
