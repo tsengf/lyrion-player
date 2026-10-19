@@ -25,6 +25,7 @@ std::string text(HWND control) {
 }
 enum { ADD=101, EDIT, REMOVE, TOGGLE, LOGIN, CONFIG, START_ALL, STOP_ALL, QUIT, OPEN_LYRION, VIEW_LOG,
        SAVE=201, CANCEL, CHOICE };
+constexpr int SETTINGS_MIN_WIDTH=780, SETTINGS_MIN_HEIGHT=340;
 constexpr UINT TRAY_MESSAGE = WM_APP+1, ACTIVATE_MESSAGE = WM_APP+2;
 constexpr wchar_t MAIN_CLASS[] = L"LyrionPlayerTrayWindow", EDITOR_CLASS[] = L"LyrionPlayerInstanceEditor";
 struct App {
@@ -39,7 +40,7 @@ struct App {
     std::vector<tray::Server> editorServers;
     std::string tableSnapshot;
     bool lastScanning = false, smoke = false;
-    int dpi = 96;
+    int dpi = 96, fittedTableWidth = -1;
     int px(int value) { return MulDiv(value,dpi,96); }
     HWND control(HWND parent, const wchar_t *kind, const wchar_t *title, DWORD style,
                  int id, int x,int y,int width,int height) {
@@ -83,6 +84,38 @@ struct App {
         Shell_NotifyIconW(NIM_ADD,&icon); icon.uVersion=NOTIFYICON_VERSION_4;
         Shell_NotifyIconW(NIM_SETVERSION,&icon);
     }
+    void fitTableColumns() {
+        if(!table)return;
+        RECT bounds;GetClientRect(table,&bounds);
+        const int minimums[]={120,110,145,110,160},weights[]={180,120,170,120,280};
+        int remaining=bounds.right-bounds.left;
+        if(remaining==fittedTableWidth)return;
+        fittedTableWidth=remaining;
+        int extra=std::max(0,remaining-px(645));
+        for(int i=0;i<5;++i){
+            int width=i==4?remaining:px(minimums[i])+MulDiv(extra,weights[i],870);
+            ListView_SetColumnWidth(table,i,width);remaining-=width;
+        }
+    }
+    void resizeSettings() {
+        if(!table)return;
+        RECT client;GetClientRect(window,&client);
+        int tableHeight=std::max(px(100),(int)client.bottom-px(156));
+        MoveWindow(table,px(16),px(16),std::max(px(100),(int)client.right-px(32)),tableHeight,TRUE);
+        int actionY=px(32)+tableHeight;
+        for(int command:{ADD,EDIT,REMOVE,TOGGLE}){
+            RECT bounds;GetWindowRect(GetDlgItem(window,command),&bounds);
+            POINT point{bounds.left,bounds.top};ScreenToClient(window,&point);
+            SetWindowPos(GetDlgItem(window,command),nullptr,point.x,actionY,0,0,SWP_NOSIZE|SWP_NOZORDER|SWP_NOACTIVATE);
+        }
+        for(int command:{CONFIG,OPEN_LYRION,VIEW_LOG}){
+            RECT bounds;GetWindowRect(GetDlgItem(window,command),&bounds);
+            POINT point{bounds.left,bounds.top};ScreenToClient(window,&point);
+            SetWindowPos(GetDlgItem(window,command),nullptr,point.x,actionY+px(44),0,0,SWP_NOSIZE|SWP_NOZORDER|SWP_NOACTIVATE);
+        }
+        MoveWindow(summary,px(16),actionY+px(87),std::max(px(100),(int)client.right-px(32)),px(24),TRUE);
+        fitTableColumns();
+    }
     void updatePlayerButtons() {
         bool enabled=!manager->quitting&&manager->find(selected())!=nullptr;
         for(int command:{EDIT,REMOVE,TOGGLE,OPEN_LYRION,VIEW_LOG})EnableWindow(GetDlgItem(window,command),enabled);
@@ -99,6 +132,7 @@ struct App {
         control(window,WC_BUTTONW,L"Open Lyrion",WS_TABSTOP,OPEN_LYRION,256,346,120,30);
         control(window,WC_BUTTONW,L"View Log",WS_TABSTOP,VIEW_LOG,384,346,120,30);
         summary=control(window,WC_STATICW,L"",0,2,16,389,890,24);
+        resizeSettings();
         updatePlayerButtons();
     }
     void refresh() {
@@ -120,6 +154,7 @@ struct App {
             if(i.id==selectedId) ListView_SetItemState(table,(int)row,LVIS_SELECTED,LVIS_SELECTED);
         }
         }
+        fitTableColumns();
         updatePlayerButtons();
         auto value=manager->quitting?"Stopping players...":manager->scanning?"Scanning servers...":
             std::to_string(manager->instances.size())+" instances; "+std::to_string(manager->servers.size())+" servers found";
@@ -241,6 +276,10 @@ LRESULT CALLBACK EditorProc(HWND window,UINT message,WPARAM w,LPARAM l) {
     if(message==WM_NCCREATE){app=(App *)((CREATESTRUCTW *)l)->lpCreateParams;SetWindowLongPtrW(window,GWLP_USERDATA,(LONG_PTR)app);}
     if(!app)return DefWindowProcW(window,message,w,l);
     try{
+        if(message==WM_SIZE){if(w!=SIZE_MINIMIZED)app->resizeSettings();return 0;}
+        if(message==WM_GETMINMAXINFO){
+            auto limits=(MINMAXINFO *)l;limits->ptMinTrackSize={app->px(SETTINGS_MIN_WIDTH),app->px(SETTINGS_MIN_HEIGHT)};return 0;
+        }
         if(message==WM_CLOSE){app->closeEditor();return 0;}
         if(message==WM_COMMAND){
             if(LOWORD(w)==SAVE)app->save();
@@ -259,6 +298,10 @@ LRESULT CALLBACK MainProc(HWND window,UINT message,WPARAM w,LPARAM l) {
     try{
         if(message==taskbarCreated){app->addIcon();return 0;}
         if(message==ACTIVATE_MESSAGE){app->show();return 0;}
+        if(message==WM_SIZE){if(w!=SIZE_MINIMIZED)app->resizeSettings();return 0;}
+        if(message==WM_GETMINMAXINFO){
+            auto limits=(MINMAXINFO *)l;limits->ptMinTrackSize={app->px(SETTINGS_MIN_WIDTH),app->px(SETTINGS_MIN_HEIGHT)};return 0;
+        }
         if(message==WM_CLOSE){ShowWindow(window,SW_HIDE);return 0;}
         if(message==WM_QUERYENDSESSION){app->manager->quit();return TRUE;}
         if(message==WM_ENDSESSION&&w){DestroyWindow(window);return 0;}
@@ -308,11 +351,18 @@ int WINAPI wWinMain(HINSTANCE instance,HINSTANCE,LPWSTR command,int) {
         WNDCLASSEXW cls{sizeof(cls)};cls.hInstance=instance;cls.hCursor=LoadCursorW(nullptr,IDC_ARROW);cls.hbrBackground=(HBRUSH)(COLOR_WINDOW+1);cls.hIcon=LoadIconW(nullptr,IDI_APPLICATION);
         cls.lpszClassName=MAIN_CLASS;cls.lpfnWndProc=MainProc;RegisterClassExW(&cls);
         cls.lpszClassName=EDITOR_CLASS;cls.lpfnWndProc=EditorProc;RegisterClassExW(&cls);
-        app.window=CreateWindowExW(0,MAIN_CLASS,L"Lyrion Player - Settings",WS_OVERLAPPED|WS_CAPTION|WS_SYSMENU|WS_MINIMIZEBOX,
-            CW_USEDEFAULT,CW_USEDEFAULT,app.px(940),app.px(465),nullptr,nullptr,instance,&app);
+        app.window=CreateWindowExW(0,MAIN_CLASS,L"Lyrion Player - Settings",WS_OVERLAPPEDWINDOW|WS_CLIPCHILDREN,
+            CW_USEDEFAULT,CW_USEDEFAULT,app.px(SETTINGS_MIN_WIDTH),app.px(SETTINGS_MIN_HEIGHT),nullptr,nullptr,instance,&app);
         if(!app.window)throw std::runtime_error("Could not create tray settings window");
         app.build();app.refresh();
-        if(smoke){app.edit(app.manager->draft());if(!app.choice||!app.mac)throw std::runtime_error("Could not create instance editor");app.closeEditor();tray::fs::remove_all(directory);DestroyWindow(app.window);}
+        if(smoke){
+            int originalColumnWidth=ListView_GetColumnWidth(app.table,0);
+            RECT frame;GetWindowRect(app.window,&frame);
+            SetWindowPos(app.window,nullptr,0,0,frame.right-frame.left+app.px(200),frame.bottom-frame.top+app.px(100),SWP_NOMOVE|SWP_NOZORDER|SWP_NOACTIVATE);
+            if(ListView_GetColumnWidth(app.table,0)<=originalColumnWidth)throw std::runtime_error("Settings columns did not grow with the window");
+            SetWindowPos(app.window,nullptr,0,0,frame.right-frame.left,frame.bottom-frame.top,SWP_NOMOVE|SWP_NOZORDER|SWP_NOACTIVATE);
+            if(ListView_GetColumnWidth(app.table,0)!=originalColumnWidth)throw std::runtime_error("Settings columns did not shrink with the window");
+            app.edit(app.manager->draft());if(!app.choice||!app.mac)throw std::runtime_error("Could not create instance editor");app.closeEditor();tray::fs::remove_all(directory);DestroyWindow(app.window);}
         else{
             app.addIcon();SetTimer(app.window,1,250,nullptr);app.manager->startConfigured();app.manager->scan();
             if(app.manager->instances.empty()||!app.manager->error.empty())app.show();

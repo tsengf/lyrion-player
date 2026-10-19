@@ -76,6 +76,16 @@ static std::string U(NSString *s) { return s ? std::string(s.UTF8String) : ""; }
     [self rebuildMenu];
     if (smoke) {
         [self openSettings:nil];
+        CGFloat originalColumnWidth = table.tableColumns[0].width;
+        NSSize originalSize = settings.contentView.frame.size;
+        if (!NSEqualSizes(originalSize, settings.contentMinSize)) exit(1);
+        [settings setContentSize:NSMakeSize(originalSize.width+200,originalSize.height+100)];
+        [settings.contentView layoutSubtreeIfNeeded];
+        CGFloat expandedColumnWidth = table.tableColumns[0].width;
+        if (expandedColumnWidth <= originalColumnWidth) exit(1);
+        [settings setContentSize:originalSize];
+        [settings.contentView layoutSubtreeIfNeeded];
+        if (table.tableColumns[0].width >= expandedColumnWidth) exit(1);
         [self showEditor:manager->draft()];
         if (!settings || !table || !login) exit(1);
         if (!nameField || !macField || !serverChoice || serverChoice.numberOfItems < 2) exit(1);
@@ -98,22 +108,28 @@ static std::string U(NSString *s) { return s ? std::string(s.UTF8String) : ""; }
         styleMask:NSWindowStyleMaskTitled | NSWindowStyleMaskClosable | NSWindowStyleMaskMiniaturizable | NSWindowStyleMaskResizable
         backing:NSBackingStoreBuffered defer:NO];
     settings.title = @"Lyrion Player — Settings"; settings.releasedWhenClosed = NO;
+    settings.contentMinSize = NSMakeSize(760,300); settings.delegate = self;
     [settings center];
     NSView *view = settings.contentView;
     NSScrollView *scroll = [[NSScrollView alloc] initWithFrame:NSMakeRect(20,120,900,285)];
     scroll.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable; scroll.hasVerticalScroller = YES;
     table = [[NSTableView alloc] initWithFrame:scroll.bounds];
+    table.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
+    table.columnAutoresizingStyle = NSTableViewUniformColumnAutoresizingStyle;
     NSArray *keys = @[@"name", @"discovery", @"server", @"autoStart", @"status"];
     NSArray *titles = @[@"Player", @"Auto discovery", @"Server", @"Start with app", @"Status"];
     const CGFloat widths[] = {180, 120, 170, 120, 280};
+    const CGFloat minimums[] = {120, 110, 145, 110, 160};
     for (NSUInteger i=0; i<keys.count; ++i) {
         NSTableColumn *column = [[NSTableColumn alloc] initWithIdentifier:keys[i]];
-        column.title = titles[i]; column.width = widths[i];
+        column.title = titles[i]; column.minWidth = minimums[i]; column.width = widths[i];
+        column.resizingMask = NSTableColumnAutoresizingMask | NSTableColumnUserResizingMask;
         [table addTableColumn:column];
     }
     table.delegate = self; table.dataSource = self; table.rowHeight = 27;
     table.target = self; table.doubleAction = @selector(editInstance:);
     scroll.documentView = table; [view addSubview:scroll];
+    [table sizeToFit];
     NSArray *labels = @[@"Add…", @"Edit…", @"Remove", @"Start / Stop"];
     SEL actions[] = {@selector(addInstance:), @selector(editInstance:), @selector(removeInstance:),
         @selector(toggleSelected:)};
@@ -128,7 +144,13 @@ static std::string U(NSString *s) { return s ? std::string(s.UTF8String) : ""; }
     playerButtons = [selectionButtons copy];
     [self updatePlayerButtons];
     summary = [NSTextField labelWithString:@""]; summary.frame = NSMakeRect(20,10,900,24);
+    summary.autoresizingMask = NSViewWidthSizable;
     [view addSubview:summary];
+    [settings setContentSize:settings.contentMinSize];
+    [settings center];
+}
+- (void)windowDidResize:(NSNotification *)notification {
+    if (notification.object == settings) [table sizeToFit];
 }
 - (void)updatePlayerButtons {
     BOOL enabled = manager && !manager->quitting && manager->find(U([self selected])) != nullptr;
