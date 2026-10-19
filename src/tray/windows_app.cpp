@@ -7,6 +7,7 @@
 #include <commctrl.h>
 #include <shellapi.h>
 #include "core.hpp"
+#include "app_info.hpp"
 #include "setting_help.hpp"
 #include <algorithm>
 
@@ -23,16 +24,17 @@ std::string text(HWND control) {
     std::wstring value(GetWindowTextLengthW(control)+1, L'\0');
     int count = GetWindowTextW(control, value.data(), (int)value.size()); value.resize(count); return U(value);
 }
-enum { ADD=101, EDIT, REMOVE, TOGGLE, LOGIN, CONFIG, START_ALL, STOP_ALL, QUIT, OPEN_LYRION, VIEW_LOG,
-       SAVE=201, CANCEL, CHOICE };
+enum { ADD=101, EDIT, REMOVE, TOGGLE, LOGIN, CONFIG, START_ALL, STOP_ALL, QUIT, OPEN_LYRION, VIEW_LOG, ABOUT,
+       SAVE=201, CANCEL, CHOICE,
+       ABOUT_WEBSITE=301, ABOUT_CLOSE };
 constexpr int SETTINGS_MIN_WIDTH=780, SETTINGS_MIN_HEIGHT=340;
 constexpr UINT TRAY_MESSAGE = WM_APP+1, ACTIVATE_MESSAGE = WM_APP+2;
-constexpr wchar_t MAIN_CLASS[] = L"LyrionPlayerTrayWindow", EDITOR_CLASS[] = L"LyrionPlayerInstanceEditor";
+constexpr wchar_t MAIN_CLASS[] = L"LyrionPlayerTrayWindow", EDITOR_CLASS[] = L"LyrionPlayerInstanceEditor", ABOUT_CLASS[] = L"LyrionPlayerAbout";
 struct App {
     std::unique_ptr<tray::Manager> manager;
     HINSTANCE instance{};
     HWND window{}, table{}, summary{}, editor{}, name{}, host{}, port{}, mac{}, web{}, start{}, choice{};
-    HWND helpTooltip{};
+    HWND helpTooltip{}, aboutWindow{};
     std::deque<std::wstring> helpText;
     HFONT font{};
     NOTIFYICONDATAW icon{};
@@ -259,27 +261,58 @@ struct App {
         else if(command==QUIT)manager->quit();
         refresh();
     }
+    void about(HMONITOR monitor=nullptr) {
+        if(!aboutWindow){
+            aboutWindow=CreateWindowExW(WS_EX_DLGMODALFRAME,ABOUT_CLASS,L"About Lyrion Player",
+                WS_OVERLAPPED|WS_CAPTION|WS_SYSMENU,CW_USEDEFAULT,CW_USEDEFAULT,px(490),px(300),window,nullptr,instance,this);
+            if(!aboutWindow)throw std::runtime_error("Could not create About dialog");
+            control(aboutWindow,WC_STATICW,W(tray::appInfo::name).c_str(),0,0,24,20,430,24);
+            control(aboutWindow,WC_STATICW,W(std::string("Version ")+tray::appInfo::version).c_str(),0,0,24,50,430,24);
+            std::string details=std::string(tray::appInfo::description)+"\r\n\r\n"+tray::appInfo::credits+"\r\n\r\n"+tray::appInfo::license;
+            control(aboutWindow,WC_STATICW,W(details).c_str(),0,0,24,88,430,110);
+            control(aboutWindow,WC_BUTTONW,L"Project website",WS_TABSTOP,ABOUT_WEBSITE,24,218,150,30);
+            control(aboutWindow,WC_BUTTONW,L"Close",WS_TABSTOP|BS_DEFPUSHBUTTON,ABOUT_CLOSE,350,218,100,30);
+        }
+        if(!monitor){POINT point;GetCursorPos(&point);monitor=MonitorFromPoint(point,MONITOR_DEFAULTTONEAREST);}
+        MONITORINFO info{sizeof(info)};RECT frame;
+        if(GetMonitorInfoW(monitor,&info)&&GetWindowRect(aboutWindow,&frame)){
+            LONG width=frame.right-frame.left,height=frame.bottom-frame.top;
+            SetWindowPos(aboutWindow,nullptr,info.rcWork.left+(info.rcWork.right-info.rcWork.left-width)/2,
+                info.rcWork.top+(info.rcWork.bottom-info.rcWork.top-height)/2,0,0,SWP_NOSIZE|SWP_NOZORDER|SWP_NOACTIVATE);
+        }
+        ShowWindow(aboutWindow,SW_SHOWNORMAL);SetForegroundWindow(aboutWindow);
+        SetFocus(GetDlgItem(aboutWindow,ABOUT_CLOSE));
+    }
     void menu(POINT point) {
         HMENU menu=CreatePopupMenu();AppendMenuW(menu,MF_STRING,EDIT,L"Settings...");
         AppendMenuW(menu,MF_STRING|(tray::platform::loginStatus()=="on"?MF_CHECKED:MF_UNCHECKED),LOGIN,L"Start app at login");
         AppendMenuW(menu,MF_SEPARATOR,0,nullptr);AppendMenuW(menu,MF_STRING,START_ALL,L"Start all players");
-        AppendMenuW(menu,MF_STRING,STOP_ALL,L"Stop all players");AppendMenuW(menu,MF_SEPARATOR,0,nullptr);AppendMenuW(menu,MF_STRING,QUIT,L"Quit Lyrion Player");
+        AppendMenuW(menu,MF_STRING,STOP_ALL,L"Stop all players");AppendMenuW(menu,MF_SEPARATOR,0,nullptr);
+        AppendMenuW(menu,MF_STRING,ABOUT,L"About Lyrion Player");AppendMenuW(menu,MF_STRING,QUIT,L"Quit Lyrion Player");
         HMONITOR monitor=MonitorFromPoint(point,MONITOR_DEFAULTTONEAREST);SetForegroundWindow(window);
         UINT command=TrackPopupMenu(menu,TPM_RETURNCMD|TPM_NONOTIFY,point.x,point.y,0,window,nullptr);
         DestroyMenu(menu);PostMessageW(window,WM_NULL,0,0);
         if(command==EDIT){show(monitor);return;}
+        if(command==ABOUT){about(monitor);return;}
         if(command)action(command);
     }
 };
+LRESULT CALLBACK AboutProc(HWND window,UINT message,WPARAM w,LPARAM l) {
+    App *app=(App *)GetWindowLongPtrW(window,GWLP_USERDATA);
+    if(message==WM_NCCREATE){app=(App *)((CREATESTRUCTW *)l)->lpCreateParams;SetWindowLongPtrW(window,GWLP_USERDATA,(LONG_PTR)app);}
+    if(!app)return DefWindowProcW(window,message,w,l);
+    try{
+        if(message==WM_CLOSE||(message==WM_COMMAND&&(LOWORD(w)==ABOUT_CLOSE||LOWORD(w)==IDCANCEL||LOWORD(w)==IDOK))){DestroyWindow(window);return 0;}
+        if(message==WM_DESTROY){app->aboutWindow=nullptr;return 0;}
+        if(message==WM_COMMAND&&LOWORD(w)==ABOUT_WEBSITE){tray::platform::openURL(tray::appInfo::website);return 0;}
+    }catch(const std::exception &e){app->error(e.what());return 0;}
+    return DefWindowProcW(window,message,w,l);
+}
 LRESULT CALLBACK EditorProc(HWND window,UINT message,WPARAM w,LPARAM l) {
     App *app=(App *)GetWindowLongPtrW(window,GWLP_USERDATA);
     if(message==WM_NCCREATE){app=(App *)((CREATESTRUCTW *)l)->lpCreateParams;SetWindowLongPtrW(window,GWLP_USERDATA,(LONG_PTR)app);}
     if(!app)return DefWindowProcW(window,message,w,l);
     try{
-        if(message==WM_SIZE){if(w!=SIZE_MINIMIZED)app->resizeSettings();return 0;}
-        if(message==WM_GETMINMAXINFO){
-            auto limits=(MINMAXINFO *)l;limits->ptMinTrackSize={app->px(SETTINGS_MIN_WIDTH),app->px(SETTINGS_MIN_HEIGHT)};return 0;
-        }
         if(message==WM_CLOSE){app->closeEditor();return 0;}
         if(message==WM_COMMAND){
             if(LOWORD(w)==SAVE)app->save();
@@ -351,6 +384,7 @@ int WINAPI wWinMain(HINSTANCE instance,HINSTANCE,LPWSTR command,int) {
         WNDCLASSEXW cls{sizeof(cls)};cls.hInstance=instance;cls.hCursor=LoadCursorW(nullptr,IDC_ARROW);cls.hbrBackground=(HBRUSH)(COLOR_WINDOW+1);cls.hIcon=LoadIconW(nullptr,IDI_APPLICATION);
         cls.lpszClassName=MAIN_CLASS;cls.lpfnWndProc=MainProc;RegisterClassExW(&cls);
         cls.lpszClassName=EDITOR_CLASS;cls.lpfnWndProc=EditorProc;RegisterClassExW(&cls);
+        cls.lpszClassName=ABOUT_CLASS;cls.lpfnWndProc=AboutProc;RegisterClassExW(&cls);
         app.window=CreateWindowExW(0,MAIN_CLASS,L"Lyrion Player - Settings",WS_OVERLAPPEDWINDOW|WS_CLIPCHILDREN,
             CW_USEDEFAULT,CW_USEDEFAULT,app.px(SETTINGS_MIN_WIDTH),app.px(SETTINGS_MIN_HEIGHT),nullptr,nullptr,instance,&app);
         if(!app.window)throw std::runtime_error("Could not create tray settings window");
@@ -362,14 +396,14 @@ int WINAPI wWinMain(HINSTANCE instance,HINSTANCE,LPWSTR command,int) {
             if(ListView_GetColumnWidth(app.table,0)<=originalColumnWidth)throw std::runtime_error("Settings columns did not grow with the window");
             SetWindowPos(app.window,nullptr,0,0,frame.right-frame.left,frame.bottom-frame.top,SWP_NOMOVE|SWP_NOZORDER|SWP_NOACTIVATE);
             if(ListView_GetColumnWidth(app.table,0)!=originalColumnWidth)throw std::runtime_error("Settings columns did not shrink with the window");
-            app.edit(app.manager->draft());if(!app.choice||!app.mac)throw std::runtime_error("Could not create instance editor");app.closeEditor();tray::fs::remove_all(directory);DestroyWindow(app.window);}
+            app.edit(app.manager->draft());if(!app.choice||!app.mac)throw std::runtime_error("Could not create instance editor");app.closeEditor();app.about();if(!app.aboutWindow)throw std::runtime_error("Could not create About dialog");DestroyWindow(app.aboutWindow);tray::fs::remove_all(directory);DestroyWindow(app.window);}
         else{
             app.addIcon();SetTimer(app.window,1,250,nullptr);app.manager->startConfigured();app.manager->scan();
             if(app.manager->instances.empty()||!app.manager->error.empty())app.show();
             if(!app.manager->error.empty())app.error(app.manager->error);
             MSG message;
             while(GetMessageW(&message,nullptr,0,0)>0){
-                if(!IsDialogMessageW(app.editor?app.editor:app.window,&message)){TranslateMessage(&message);DispatchMessageW(&message);}
+                if((!app.aboutWindow||!IsDialogMessageW(app.aboutWindow,&message))&&!IsDialogMessageW(app.editor?app.editor:app.window,&message)){TranslateMessage(&message);DispatchMessageW(&message);}
             }
         }
         app.manager.reset();DeleteObject(app.font);

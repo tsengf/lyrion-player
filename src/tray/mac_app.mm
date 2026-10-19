@@ -2,6 +2,7 @@
 #import <AppKit/AppKit.h>
 #import <ServiceManagement/ServiceManagement.h>
 #include "core.hpp"
+#include "app_info.hpp"
 #include "setting_help.hpp"
 #include <csignal>
 #include <fcntl.h>
@@ -15,7 +16,7 @@ static std::string U(NSString *s) { return s ? std::string(s.UTF8String) : ""; }
     std::unique_ptr<tray::Manager> manager;
     NSStatusItem *statusItem;
     NSScreen *menuScreen;
-    NSWindow *settings, *editor;
+    NSWindow *settings, *editor, *aboutPanel;
     NSTableView *table;
     NSButton *autoStart;
     NSArray<NSButton *> *playerButtons;
@@ -90,6 +91,9 @@ static std::string U(NSString *s) { return s ? std::string(s.UTF8String) : ""; }
         if (!settings || !table || !login) exit(1);
         if (!nameField || !macField || !serverChoice || serverChoice.numberOfItems < 2) exit(1);
         [self cancelEditor:nil];
+        [self showAbout:nil];
+        if (!aboutPanel || !aboutPanel.visible) exit(1);
+        [aboutPanel close];
         tray::fs::remove_all(directory);
         [NSApp terminate:nil]; return;
     }
@@ -315,6 +319,24 @@ static std::string U(NSString *s) { return s ? std::string(s.UTF8String) : ""; }
 }
 - (void)startAll:(id)sender { manager->startAll(); }
 - (void)stopAll:(id)sender { manager->stopAll(); }
+- (void)showAbout:(id)sender {
+    NSString *text = [NSString stringWithFormat:@"%@\n\n%@\n\n%@\n\n%@",
+        S(tray::appInfo::description), S(tray::appInfo::credits), S(tray::appInfo::license), S(tray::appInfo::website)];
+    NSMutableAttributedString *credits = [[NSMutableAttributedString alloc] initWithString:text];
+    [credits addAttribute:NSLinkAttributeName value:[NSURL URLWithString:S(tray::appInfo::website)]
+        range:[text rangeOfString:S(tray::appInfo::website)]];
+    NSArray<NSWindow *> *previousWindows = NSApp.windows;
+    [NSApp orderFrontStandardAboutPanelWithOptions:@{
+        NSAboutPanelOptionApplicationName:S(tray::appInfo::name),
+        NSAboutPanelOptionApplicationVersion:S(tray::appInfo::version),
+        NSAboutPanelOptionVersion:@"", NSAboutPanelOptionCredits:credits}];
+    NSScreen *screen = [sender isKindOfClass:NSMenuItem.class] && [NSScreen.screens containsObject:menuScreen]
+        ? menuScreen : [self screenAtPointer];
+    if (!aboutPanel) for (NSWindow *window in NSApp.windows)
+        if (window.visible && ![previousWindows containsObject:window]) { aboutPanel = window; break; }
+    if (aboutPanel) [self placeWindow:aboutPanel onScreen:screen];
+    [NSApp activateIgnoringOtherApps:YES];
+}
 - (void)quit:(id)sender { [NSApp terminate:nil]; }
 - (void)rebuildMenu {
     NSMenu *menu = [NSMenu new]; menu.delegate = self;
@@ -328,6 +350,7 @@ static std::string U(NSString *s) { return s ? std::string(s.UTF8String) : ""; }
     NSMenuItem *start = [menu addItemWithTitle:@"Start all players" action:@selector(startAll:) keyEquivalent:@""]; start.target = self;
     NSMenuItem *stop = [menu addItemWithTitle:@"Stop all players" action:@selector(stopAll:) keyEquivalent:@""]; stop.target = self;
     [menu addItem:NSMenuItem.separatorItem];
+    NSMenuItem *about = [menu addItemWithTitle:@"About Lyrion Player" action:@selector(showAbout:) keyEquivalent:@""]; about.target = self;
     NSMenuItem *quit = [menu addItemWithTitle:@"Quit Lyrion Player" action:@selector(quit:) keyEquivalent:@"q"]; quit.target = self;
     statusItem.menu = menu;
 }
