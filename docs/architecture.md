@@ -12,6 +12,10 @@ point-to-point/tunnel adapters are excluded from the LAN list. A generic socket
 retains localhost and limited-broadcast discovery. All sockets are monitored
 together, only valid Lyrion discovery responses are accepted, and every socket
 is closed after a response or timeout. Every retry refreshes the interface list.
+Discovery probes localhost (`127.0.0.1`), the limited-broadcast address, and each
+active LAN interface's subnet broadcast on UDP port 3483. For example, an address
+of `192.0.2.144/24` produces a probe to `192.0.2.255`. Localhost discovery works
+even without LAN access. The first valid reply selects the playback server.
 This helps with VPN route selection but does not override traffic filtering.
 
 `src/output_native.c` adapts Squeezelite's existing output interface to native
@@ -66,9 +70,10 @@ Shell_NotifyIcon. Both use the C++17 manager in `core.cpp`. JSON configuration h
 an explicit schema version and is replaced atomically. Player IDs are generated
 once and persisted; duplicate IDs are rejected before launching.
 
-The tray app alone registers for user sign-in (SMAppService on macOS, HKCU Run on
-Windows). Each configured instance is an ordinary child with redirected stdin and
-stdout and an independent log. `--managed` emits versioned newline-delimited JSON
+The tray app alone registers for user sign-in. macOS uses `SMAppService`; Windows
+stores one `LyrionPlayerTray` value in the current user's Run registry key. Each
+configured instance is an ordinary child with redirected stdin and stdout and an
+independent log. `--managed` emits versioned newline-delimited JSON
 connection/audio events and reads `stop` from stdin. EOF requests shutdown if its
 owner disappears. macOS uses posix_spawn and close-on-exec descriptors; Windows
 restricts inherited handles and uses one kill-on-close Job Object per player.
