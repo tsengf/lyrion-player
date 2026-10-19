@@ -11,9 +11,14 @@ including changes made while music is playing. Switching devices keeps the same
 track and server connection; a brief gap while the new device opens is possible.
 Shared audio lets other applications play sound too.
 
-![Lyrion Player Settings on macOS](docs/images/settings-macos.png)
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/settings-macos-dark.png">
+  <source media="(prefers-color-scheme: light)" srcset="docs/images/settings-macos.png">
+  <img alt="Lyrion Player Settings on macOS" src="docs/images/settings-macos.png">
+</picture>
 
-*Settings on macOS with fictional player names and example IP addresses.*
+*Settings on macOS, shown in light or dark mode to match your theme. Player names
+and IP addresses are fictional examples.*
 
 ## Install
 
