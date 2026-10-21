@@ -1,5 +1,11 @@
 name: Build and test
-on: [push, pull_request]
+on:
+  workflow_dispatch:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
 jobs:
   macos:
     strategy:
@@ -13,20 +19,32 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: brew install flac libvorbis mpg123 libsoxr
-      - run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DPLAYER_BUILD_TRAY=ON -DCMAKE_OSX_DEPLOYMENT_TARGET=13.0
+      - run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DPLAYER_BUILD_TRAY=ON -DPLAYER_BUILD_PACKAGES=ON -DCMAKE_OSX_DEPLOYMENT_TARGET=13.0
       - run: cmake --build build --parallel
       - run: ctest --test-dir build --output-on-failure
-      - run: cmake --install build --prefix "$PWD/build/package" --component Tray
-      - name: Check standalone application
+      - name: Create installation package
+        run: cpack --config build/CPackConfig.cmake -C Release
+      - name: Verify disk image and bundled application
+        shell: bash
         run: |
-          codesign --verify --deep --strict "build/package/Lyrion Player.app"
-          "build/package/Lyrion Player.app/Contents/MacOS/Lyrion Player" --smoke-test
-          "build/package/Lyrion Player.app/Contents/MacOS/player" --help
-      - run: ditto -c -k --sequesterRsrc build/package lyrion-player-macos-${{ matrix.arch }}.zip
+          images=(build/packages/*.dmg)
+          test "${#images[@]}" -eq 1
+          hdiutil verify "${images[0]}"
+          mkdir -p build/package-mount
+          hdiutil attach -readonly -nobrowse -mountpoint build/package-mount "${images[0]}"
+          trap 'hdiutil detach build/package-mount' EXIT
+          test -L build/package-mount/Applications
+          test -f build/package-mount/licenses/COPYING
+          test ! -d build/package-mount/bin
+          codesign --verify --deep --strict "build/package-mount/Lyrion Player.app"
+          "build/package-mount/Lyrion Player.app/Contents/MacOS/Lyrion Player" --smoke-test
+          "build/package-mount/Lyrion Player.app/Contents/MacOS/player" --help
       - uses: actions/upload-artifact@v4
         with:
           name: lyrion-player-macos-${{ matrix.arch }}
-          path: lyrion-player-macos-${{ matrix.arch }}.zip
+          path: build/packages/*.dmg
+          if-no-files-found: error
+          retention-days: 30
   windows:
     runs-on: windows-2022
     steps:
@@ -35,17 +53,45 @@ jobs:
         with:
           python-version: '3.x'
       - shell: pwsh
-        run: cmake -S . -B build -A x64 -DPLAYER_BUILD_TRAY=ON "-DCMAKE_TOOLCHAIN_FILE=$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake"
+        run: cmake -S . -B build -A x64 -DPLAYER_BUILD_TRAY=ON -DPLAYER_BUILD_PACKAGES=ON "-DCMAKE_TOOLCHAIN_FILE=$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake"
       - run: cmake --build build --config Release --parallel
       - run: ctest --test-dir build -C Release --output-on-failure
-      - run: cmake --install build --config Release --prefix "${{ github.workspace }}/build/package" --component Tray
-      - name: Check standalone application
+      - name: Locate NSIS
         shell: pwsh
         run: |
-          $process = Start-Process -FilePath '.\build\package\Lyrion Player.exe' -ArgumentList '--smoke-test' -Wait -PassThru
-          if ($process.ExitCode -ne 0) { throw 'Packaged tray smoke test failed' }
-          Compress-Archive -Path build/package/* -DestinationPath lyrion-player-windows-x64.zip
+          $nsis = "${env:ProgramFiles(x86)}\NSIS"
+          if (!(Test-Path "$nsis/makensis.exe")) {
+            choco install nsis --yes --no-progress
+            if ($LASTEXITCODE -ne 0) { throw 'NSIS installation failed' }
+          }
+          $nsis | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+      - name: Create installation package
+        run: cpack --config build/CPackConfig.cmake -C Release
+      - name: Install and smoke test Windows package
+        shell: pwsh
+        run: |
+          $installers = @(Get-ChildItem build/packages/*.exe)
+          if ($installers.Count -ne 1) { throw 'Expected one installer' }
+          $destination = Join-Path $env:RUNNER_TEMP 'LyrionPlayer-install'
+          $install = Start-Process $installers[0].FullName -ArgumentList '/S', "/D=$destination" -Wait -PassThru
+          if ($install.ExitCode -ne 0) { throw "Installer failed: $($install.ExitCode)" }
+          foreach ($file in 'Lyrion Player.exe', 'player.exe', 'msvcp140.dll', 'vcruntime140.dll', 'licenses/COPYING') {
+            if (!(Test-Path (Join-Path $destination $file))) { throw "Installed file missing: $file" }
+          }
+          $process = Start-Process -FilePath (Join-Path $destination 'Lyrion Player.exe') -ArgumentList '--smoke-test' -Wait -PassThru
+          if ($process.ExitCode -ne 0) { throw 'Installed tray smoke test failed' }
+          $backend = Start-Process -FilePath (Join-Path $destination 'player.exe') -ArgumentList '--help' -Wait -PassThru
+          if ($backend.ExitCode -ne 0) { throw 'Installed backend smoke test failed' }
+          $shortcuts = Join-Path ([Environment]::GetFolderPath('CommonPrograms')) 'Lyrion Player'
+          if (!(Test-Path (Join-Path $shortcuts 'Lyrion Player.lnk'))) { throw 'Start menu shortcut missing' }
+          $uninstaller = Join-Path $destination 'Uninstall.exe'
+          if (!(Test-Path $uninstaller)) { throw 'Uninstaller missing' }
+          $uninstall = Start-Process $uninstaller -ArgumentList '/S', "_?=$destination" -Wait -PassThru
+          if ($uninstall.ExitCode -ne 0) { throw 'Uninstaller failed' }
+          if (Test-Path (Join-Path $destination 'Lyrion Player.exe')) { throw 'Uninstall left the app installed' }
       - uses: actions/upload-artifact@v4
         with:
           name: lyrion-player-windows-x64
-          path: lyrion-player-windows-x64.zip
+          path: build/packages/*.exe
+          if-no-files-found: error
+          retention-days: 30
