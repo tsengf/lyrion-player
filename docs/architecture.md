@@ -1,67 +1,97 @@
 # Architecture
 
-Squeezelite supplies discovery, SlimProto, HTTP streaming, codec decoding,
-buffering, volume, fades, and Lyrion playback/status handling. Its source lives in
-`vendor/squeezelite`; Player does not implement a new approximation of SlimProto.
+## Independent player backend
 
-`src/discovery.c` enumerates active IPv4 broadcast interfaces with `getifaddrs`
-on macOS or `GetAdaptersAddresses` on Windows. Each LAN probe has a socket bound
-to its local source address and targets its subnet broadcast. macOS also uses
-`IP_BOUND_IF`; Windows requests the adapter with `IP_UNICAST_IF`. Loopback and
-point-to-point/tunnel adapters are excluded from the LAN list. A generic socket
-retains localhost and limited-broadcast discovery. All sockets are monitored
-together, only valid Lyrion discovery responses are accepted, and every socket
-is closed after a response or timeout. Every retry refreshes the interface list.
-Discovery probes localhost (`127.0.0.1`), the limited-broadcast address, and each
-active LAN interface's subnet broadcast on UDP port 3483. For example, an address
-of `192.0.2.144/24` produces a probe to `192.0.2.255`. Localhost discovery works
-even without LAN access. The first valid reply selects the playback server.
-This helps with VPN route selection but does not override traffic filtering.
+`src/player` implements the player without Squeezelite. The executable uses C++17
+with C99 native-audio/discovery adapters. The tray application's configuration,
+player identities, launch arguments, and version-1 JSON IPC remain compatible.
 
-`src/output_native.c` adapts Squeezelite's existing output interface to native
-audio. It retains the interface's historical `output_init_pa`/`_pa_open` names to
-keep upstream changes small, but does not link PortAudio. It advertises only
-48 kHz to the decoding/resampling pipeline. The default resampling recipe is
-`hX`, ensuring other source rates are converted to that clock.
+`main.cpp` validates the command line, initializes codec libraries and native
+audio, and owns shutdown. `managed.cpp` accepts `stop` or owner EOF on stdin and
+sets a process-lifetime atomic cancellation flag. All stdout output in managed
+mode is versioned JSON; diagnostics go to stderr or the configured log file.
+
+`protocol.cpp` discovers/connects to Lyrion and runs the SlimProto control loop.
+Server frames have a 16-bit network-order payload length; player frames have a
+four-byte opcode and a 32-bit network-order body length. Fragmented and coalesced
+frames are handled incrementally. Length and field validation precedes dispatch;
+malformed control frames close the connection and trigger a bounded retry delay.
+Unknown opcodes are ignored. A fresh parser is created on every connection.
+
+The handshake uses SqueezePlay device ID 12 and the independent model name
+`lyrion-player`. Only implemented formats are advertised. `strm`, `audg`, `aude`,
+`cont`, `codc`, `setd` and IPv4 `serv` commands are supported. STAT reports use the
+53-byte layout, network byte order, a wrapping monotonic millisecond clock,
+rendered-frame playback time, estimated device latency, and echoed timer tokens.
+Track start, decoder completion, buffer readiness, underrun, and disconnect events
+are distinct. The connection sends periodic status and reconnects on server loss.
+Server redirection retains the configured SlimProto port and optional sync-group
+capability. Legacy cloud-server redirection and direct local-file access are not
+implemented or advertised.
+
+`net.cpp` supplies nonblocking IPv4 TCP connections and bounded, cancellable I/O.
+Connect and write deadlines are five seconds; an inactive HTTP read times out
+after fifteen seconds. Cancellation is checked at least every 50 ms while waiting
+on sockets. Hostnames are resolved before connecting; platform DNS lookup itself
+is synchronous.
+
+`http.cpp` runs on a decoder worker, forwards response headers to Lyrion, and
+streams HTTP bodies through a 16 KiB read buffer. It handles Content-Length,
+connection-close bodies, chunked transfer encoding (including trailers), and ICY
+metadata. Headers, individual lines, and trailers have explicit limits. Direct
+streams wait for `cont` before reading audio, and unknown formats wait for `codc`.
+Redirects, HTTPS, and compressed HTTP content require the server's proxy path.
+
+`codecs.cpp` calls libFLAC, mpg123, and libvorbisfile directly. Its PCM reader
+handles raw integer samples, RIFF/WAV, AIFF, and uncompressed AIFC. WAV integer and
+32-bit float samples are supported; output is mono-expanded or stereo. Optional
+faad2 support handles ADTS/ADIF AAC, not MP4 containers. Other formats and
+multichannel audio require server transcoding. Decoder callback errors are caught
+inside C callbacks and propagated back to the worker. Soxr HQ converts decoded
+samples to 48 kHz signed 32-bit stereo, draining its tail at track completion.
+
+`playback.cpp` owns bounded, per-track output rings (eight seconds each, at most
+four queued tracks). The producer waits on a condition variable when a ring is
+full; stop/flush cancellation releases it. Track markers survive prefetching:
+decoder completion requests the next stream while the current track's buffered
+audio continues. The output callback advances track clocks as frames are consumed,
+changes the current track at its boundary, applies per-channel volume/replay gain,
+channel selection and polarity, and clips before converting back to integer PCM.
+Linear fades and crossfades mix already-buffered tracks at the output boundary;
+the available buffered overlap limits crossfade duration.
+Pause and power-off produce silence without consuming audio. Timed starts,
+temporary silence and skip adjustments use the 48 kHz clock. No multiroom
+synchronization accuracy guarantee is made.
+
+The control loop alone writes the SlimProto socket. Decoder and output events are
+queued under the playback mutex; no socket I/O runs inside the audio callback.
+Shutdown cancels and joins the decoder, then joins native audio callbacks before
+freeing playback state. The silent test executable exercises the same backend,
+changing only the native audio device selection.
+
+## Discovery and native audio
+
+`src/discovery.c` enumerates active IPv4 broadcast interfaces using `getifaddrs`
+on macOS or `GetAdaptersAddresses` on Windows. Each LAN probe uses a source-bound
+socket and its subnet broadcast. macOS also uses `IP_BOUND_IF`; Windows requests
+the adapter using `IP_UNICAST_IF`. Loopback and tunnel adapters are excluded from
+the LAN list. A generic socket also probes localhost and limited broadcast on UDP
+port 3483. All sockets are monitored together and closed on reply or timeout;
+each retry refreshes the interfaces. The first valid reply selects a server.
+The tray's collect-all scan also retrieves names, UUIDs and web ports.
 
 `src/native_audio.c` contains the pinned miniaudio implementation. A worker owns
-initialization, start, recovery, and teardown. macOS selects only Core Audio;
-Windows selects only WASAPI. A null device ID and shared mode enable miniaudio's
-native default-device rerouting on macOS. On Windows, the audio worker queries
-the native default endpoint ID every 100 ms and recreates the device when it
-changes, retaining the protocol connection and ring buffer. The monitor uses the
-same `eRender`/`eConsole` role as miniaudio's default selection.
-There is no fallback to another audio API or a
-silent backend in the production target.
+initialization, start, recovery and teardown. macOS selects Core Audio and Windows
+selects WASAPI, always in shared mode using the system default output. There is no
+fallback to another audio API or silent production backend. Missing devices retry
+every two seconds without consuming buffered audio or dropping the protocol link.
 
-The device callback pulls S32 stereo frames while holding the Squeezelite output
-mutex. It uses the existing output engine to consume the ring buffer, apply
-volume/fades, track elapsed frames, and produce silence while paused. Reported
-device buffering is an estimate based on the backend's period size and count;
-precise synchronized output across hardware switches is not verified.
-
-Notifications only set atomic flags. They do not stop or reinitialize the device,
-take the Squeezelite output mutex, log, or access networking. This avoids doing
-blocking work while native notification handlers hold internal locks. The worker
-logs successful reroutes and recreates the device/context after an unexpected
-stop. Startup/open failures retry every two seconds without consuming decoded
-frames. The worker discards stopped events generated by its own teardown.
-
-Miniaudio's built-in WASAPI automatic routing is disabled. Its 0.11 series can
-reinitialize audio inside an OS notification callback, with a reported deadlock
-when another application owns the destination device exclusively
-([upstream issue 1149](https://github.com/mackron/miniaudio/issues/1149)). Our
-Windows monitor queries MMDevice from the owning worker and performs all
-reinitialization there, without registering its own notification callbacks.
-
-Shutdown signals the worker, joins it, and waits for miniaudio teardown to stop
-all callbacks before freeing the Squeezelite output buffer. User-session process
-lifetime is owned by the tray application for GUI users. Headless command-line
-players run for the lifetime of the process that launched them.
-
-The silent test executable uses the same protocol, decoder, resampler, adapter,
-and lifecycle code with only miniaudio's backend selection changed. It verifies
-protocol-to-output integration; it cannot verify native hardware routing.
+Notifications only set atomic flags; device reinitialization happens on the
+worker. macOS uses miniaudio's default-device rerouting. On Windows the worker
+queries the native default endpoint ID every 100 ms and recreates the device when
+it changes. Miniaudio's automatic WASAPI rerouting is disabled to avoid blocking
+inside OS notification callbacks. Device latency is an estimate based on native
+period size/count. Physical rerouting and synchronization require hardware checks.
 
 ## Native tray application
 

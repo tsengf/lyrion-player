@@ -27,6 +27,16 @@ temporary profile. Metadata discovery tests collect multiple mock replies. None 
 these tests modify sign-in registrations.
 A CI workflow builds/tests/packages the native apps on macOS and Windows.
 
+Independent-backend tests additionally cover fragmented/coalesced control frames,
+maximum-length and malformed packets, reconnection, player-name settings, timer
+tokens, FLAC/MP3/Vorbis decoding, WAV/AIFF and high-rate PCM, chunked HTTP, ICY
+metadata, deferred codec/continuation commands, queued tracks, decoder errors,
+and cancellation while an HTTP body or continuation is blocked. Sample-level
+checks verify volume, replay gain, clipping, polarity, channel selection, pause,
+power, timed starts, skip, fades/crossfades, and track boundaries without an audio device.
+`tests/fixtures` contains generated one-second tones, so codec tests need no
+encoder installation. See its README for regeneration commands.
+
 Physical device switching requires manual validation on both systems:
 
 1. Start a track in Lyrion; change the system output between speakers and a

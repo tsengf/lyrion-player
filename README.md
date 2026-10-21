@@ -1,8 +1,7 @@
 # Lyrion Player
 
-A Lyrion Music Server player for macOS and Windows, based on
-[Squeezelite](https://github.com/ralph-irving/squeezelite). Create and manage players
-from the macOS menu bar or Windows system tray, then control playback from
+An independent Lyrion Music Server player for macOS and Windows. Create and
+manage players from the macOS menu bar or Windows system tray, then control playback from
 Lyrion's web interface or a compatible controller.
 
 The player discovers servers on your computer and local network, or connects to a
@@ -171,8 +170,9 @@ On Windows, configuration and logs share a folder.
 ## Playback
 
 Native decoding: FLAC, MP3, Ogg Vorbis, and PCM (including WAV/AIFF). Other formats
-require Lyrion transcoding. Optional AAC support requires faad2 and
-`-DPLAYER_AAC=ON`. Direct HTTPS streams are not enabled in this initial build;
+require Lyrion transcoding. Optional ADTS/ADIF AAC support requires faad2 and
+`-DPLAYER_AAC=ON`; MP4 containers require server transcoding. Direct HTTPS
+streams are not enabled in this initial build;
 use the server's HTTP stream/proxy path. This is a stereo PCM player, with no DSD
 passthrough or bit-perfect/exclusive output.
 
@@ -279,14 +279,16 @@ purposes. CI builds separate macOS ARM64/Intel and Windows x64 ZIP artifacts.
 Dependencies can set a higher minimum OS version than the app itself; use dependency
 builds targeting your oldest supported OS when distributing broadly.
 
+The player backend and tray manager use C++17; native audio and discovery use C99.
 Python is only needed for tests. See [development and validation](docs/development.md)
 for test coverage and hardware checks.
 
-## License and upstream
+## License and dependencies
 
-Player is GPL-3.0-or-later because it incorporates Squeezelite. Original copyright
-notices are retained; the full GPL text is in [COPYING](COPYING).
-See [third-party notices](THIRD_PARTY.md)
-for pinned source revisions and local modifications. Miniaudio is used under its
+Player is GPL-3.0-or-later; the full GPL text is in [COPYING](COPYING).
+The backend implements SlimProto, HTTP transport, decoding, buffering, and playback
+without Squeezelite source or runtime dependencies. See
+[third-party notices](THIRD_PARTY.md) for the remaining dependencies.
+Miniaudio is used under its
 MIT No Attribution option. Redistributing a build also requires satisfying its
 codec libraries' licenses and supplying corresponding GPL source as applicable.
