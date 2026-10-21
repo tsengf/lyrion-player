@@ -112,6 +112,8 @@ if(PLAYER_BUILD_TRAY)
       MACOSX_BUNDLE_BUNDLE_VERSION "${PROJECT_VERSION}"
       MACOSX_BUNDLE_SHORT_VERSION_STRING "${PROJECT_VERSION}"
       MACOSX_BUNDLE_INFO_PLIST "${CMAKE_CURRENT_SOURCE_DIR}/src/tray/Info.plist.in")
+    # Refresh the bundled executable when only backend sources change.
+    set_property(TARGET lyrion-player-tray APPEND PROPERTY LINK_DEPENDS "$<TARGET_FILE:player>")
     add_custom_command(TARGET lyrion-player-tray POST_BUILD
       COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:player>
         "$<TARGET_BUNDLE_CONTENT_DIR:lyrion-player-tray>/MacOS/player")
