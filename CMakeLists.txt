@@ -1,4 +1,6 @@
 cmake_minimum_required(VERSION 3.24)
+option(PLAYER_BUILD_PACKAGES "Enable native installation packages" OFF)
+option(PLAYER_BUILD_TRAY "Build the native instance-management tray application" ${PLAYER_BUILD_PACKAGES})
 # Set the deployment target before enabling languages so the helper and UI agree.
 if(CMAKE_HOST_APPLE AND PLAYER_BUILD_TRAY AND NOT CMAKE_OSX_DEPLOYMENT_TARGET)
   set(CMAKE_OSX_DEPLOYMENT_TARGET "13.0" CACHE STRING "Minimum macOS version" FORCE)
@@ -85,7 +87,6 @@ if(WIN32)
 endif()
 install(TARGETS player RUNTIME DESTINATION bin)
 
-option(PLAYER_BUILD_TRAY "Build the native instance-management tray application" OFF)
 if(PLAYER_BUILD_TRAY)
   enable_language(CXX)
   if(MSVC)
@@ -200,4 +201,8 @@ if(PLAYER_BUILD_TESTS)
     add_test(NAME player_tray_ui COMMAND $<TARGET_FILE:lyrion-player-tray> --smoke-test)
     set_tests_properties(player_tray_ui PROPERTIES TIMEOUT 20)
   endif()
+endif()
+
+if(PLAYER_BUILD_PACKAGES)
+  include(cmake/Packaging.cmake)
 endif()
