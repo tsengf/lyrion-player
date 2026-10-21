@@ -1,20 +1,18 @@
 # Third-party source
 
-## Squeezelite
+## Player backend
 
-- Source: https://github.com/ralph-irving/squeezelite
-- Revision: `4e0ec3188320da7de059c571499e626ff8b3712f`
-- License: GPL-3.0-or-later, retained in `vendor/squeezelite/LICENSE.txt`
-- Imported root C/header files and upstream README; optional upstream backends
-  remain available as reference but are not compiled by Player.
-- Local changes to `main.c`: identify the executable as Player, default the
-  resampling recipe to `hX`, add long command-line aliases, and adjust help for
-  the native backend, and add managed-mode IPC. The build defines `MODEL_NAME=Player`.
-- Player uses its own native output adapter in place of `output_pa.c`.
-- Local changes to `slimproto.c`: use Player's discovery adapter for localhost,
-  general broadcast, and source-bound per-interface LAN probes, and allow an
-  isolated discovery port in the silent test build only; managed mode also reports
-  connection state and accepts cancellation during discovery/retries.
+The SlimProto, HTTP transport, playback buffer, and decoder adapters in
+`src/player` are implemented in this project. There is no Squeezelite source,
+header, library, executable, or runtime dependency.
+
+Wire layouts were checked against Lyrion Music Server's server-side handlers:
+
+- [SlimProto handlers](https://github.com/LMS-Community/slimserver/blob/public/9.0/Slim/Networking/Slimproto.pm)
+- [Playback commands](https://github.com/LMS-Community/slimserver/blob/public/9.0/Slim/Player/Squeezebox.pm)
+- [Capability and rate codes](https://github.com/LMS-Community/slimserver/blob/public/9.0/Slim/Player/SqueezePlay.pm)
+
+These are protocol references; their implementation is not bundled or linked.
 
 ## Miniaudio
 
