@@ -29,12 +29,14 @@ Download a package from a successful run of the
 [Build and test workflow](https://github.com/tsengf/lyrion-player/actions/workflows/build.yml).
 Choose `lyrion-player-macos-arm64` for Apple Silicon,
 `lyrion-player-macos-x86_64` for Intel Macs, or `lyrion-player-windows-x64` for
-Windows. Extract the downloaded artifact and its packaged ZIP as needed. You can
-also [build from source](#build).
+Windows. Extract the downloaded workflow artifact to get the installer. You can
+also [build from source](#build) or [create packages locally](#create-installation-packages).
 
-- **macOS:** Copy **Lyrion Player.app** into Applications and open it.
-- **Windows:** Extract the entire package into a permanent folder and open
-  **Lyrion Player.exe**. Keep `player.exe`, the DLLs, and licenses beside it.
+- **macOS:** Open the `.dmg` and drag **Lyrion Player.app** to Applications.
+- **Windows:** Run the `.exe` installer, then open **Lyrion Player** from the
+  Start menu. The installer also provides an uninstaller.
+- **Portable ZIP:** Extract the entire package into a permanent folder. On
+  Windows, keep `player.exe`, the DLLs, and licenses beside **Lyrion Player.exe**.
 
 Packages include the backend and codec libraries; running them does not require
 Python, Homebrew, MacPorts, or vcpkg. These are development distributions:
@@ -160,8 +162,9 @@ included.
 
 1. Disable **Start app at login** in the tray menu.
 2. Choose **Quit Lyrion Player** to stop its players and exit.
-3. On macOS, remove **Lyrion Player.app** from Applications. On Windows, remove
-   the folder where you extracted the package.
+3. On macOS, remove **Lyrion Player.app** from Applications. On Windows, use
+   the installed uninstaller or Settings → Apps. For a portable ZIP installation,
+   remove the folder where you extracted the package.
 
 Configuration and logs remain in the locations above. Keep them to reuse your
 settings, or delete them after quitting if you want to remove saved data too.
@@ -186,7 +189,7 @@ the default output every two seconds. Buffered playback resumes when a device is
 available. Long outages can affect synchronization with other players; no claim
 of uninterrupted multiroom synchronization is made during device changes.
 The device remains open and produces silence while paused or powered off in
-Lyrion. Installer wizards are not included yet.
+Lyrion.
 
 ## Build
 
@@ -255,29 +258,63 @@ ctest --test-dir build --build-config Release --output-on-failure
 The manifest installs codec dependencies. Keep the DLLs that vcpkg copies beside
 `player.exe` with the executable if moving it to another directory.
 
-### Create a self-contained package
+### Create installation packages
 
-On macOS:
+Packaging follows the same CMake/CPack workflow as SlimPDF. Enable it when
+configuring, build and test, then run CPack from the project folder:
 
 ```sh
-cmake --install build --prefix "$PWD/build/package" --component Tray
-open "build/package/Lyrion Player.app"
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DPLAYER_BUILD_PACKAGES=ON
+cmake --build build --config Release --parallel
+ctest --test-dir build -C Release --output-on-failure
+cpack --config build/CPackConfig.cmake -C Release
 ```
 
-On Windows:
+Keep your platform's dependency options from the build instructions above, such
+as `-DCMAKE_PREFIX_PATH=/opt/local` and `-DPython3_EXECUTABLE=/opt/local/bin/python3.13`
+for MacPorts, or the vcpkg toolchain and `-A x64` for Windows. A fresh build enables
+the tray app automatically when packaging is enabled. If your existing build has
+`PLAYER_BUILD_TRAY=OFF`, also pass `-DPLAYER_BUILD_TRAY=ON`.
 
-```powershell
+| Platform | Output example | Requirements |
+| --- | --- | --- |
+| macOS | `build/packages/LyrionPlayer-0.1.0-Darwin-arm64.dmg` | Xcode command-line tools; `hdiutil` and `codesign` ship with macOS. |
+| Windows x64 | `build/packages/LyrionPlayer-0.1.0-Windows-x86_64.exe` | NSIS 3.03 or later on `PATH`, in addition to the build dependencies. |
+
+Names include the project version and built architecture. macOS DMGs include an
+Applications shortcut for drag-and-drop installation. Windows installers include
+a Start menu shortcut and uninstaller. Both include the backend, codec/runtime
+libraries and licenses. Only the Tray deployment component is packaged; test
+executables and the development CLI install are excluded.
+
+For a portable ZIP using the same deployment and naming rules:
+
+```sh
+cpack --config build/CPackConfig.cmake -C Release -G ZIP
+```
+
+Build on the platform and architecture you want to distribute. macOS CI builds
+separate Apple Silicon and Intel DMGs. A universal build requires both architectures
+in every linked codec library; specifying `CMAKE_OSX_ARCHITECTURES` alone does not
+make single-architecture dependencies universal.
+
+The [Build and test workflow](https://github.com/tsengf/lyrion-player/actions/workflows/build.yml)
+uses these same commands, verifies the macOS DMG or installs/tests/uninstalls the
+Windows package, and uploads installers as artifacts for 30 days. It runs on
+pushes, pull requests, and manual dispatch, without publishing GitHub Releases.
+
+To stage the self-contained app/folder without making an installer, the existing
+install command remains available:
+
+```sh
 cmake --install build --config Release --prefix "$PWD/build/package" --component Tray
-& ".\build\package\Lyrion Player.exe"
 ```
 
-Distribute the whole package with its licenses and corresponding source. The macOS
-step bundles dylibs, fixes their paths and applies an ad-hoc signature. Developer
-ID signing/notarization and Windows Authenticode signing require release credentials
-and are not configured. These are unsigned development distributions for OS trust
-purposes. CI builds separate macOS ARM64/Intel and Windows x64 ZIP artifacts.
-Dependencies can set a higher minimum OS version than the app itself; use dependency
-builds targeting your oldest supported OS when distributing broadly.
+Distribute packages with their licenses and corresponding source. The macOS
+deployment bundles dylibs, fixes their paths and applies an ad-hoc signature.
+Developer ID signing/notarization and Windows Authenticode signing are not
+configured. Dependencies can set a higher minimum OS version than the app itself;
+use dependency builds targeting your oldest supported OS when distributing broadly.
 
 The player backend and tray manager use C++17; native audio and discovery use C99.
 Python is only needed for tests. See [development and validation](docs/development.md)
