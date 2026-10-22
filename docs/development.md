@@ -66,6 +66,11 @@ The tray frontend requires Qt 6.7 or later (Widgets and Network), plus Qt Test w
 `PLAYER_BUILD_TESTS=ON`. Backend-only builds require no Qt. On Windows, deploy Qt
 next to the test executable before CTest as described in the README. macOS UI unit
 tests use Qt's offscreen platform; the application smoke test uses Cocoa.
+`player_tray_menu_native` also uses Cocoa: it checks native menu contents, opens
+and dismisses the menu repeatedly with a non-mouse application event, and verifies
+that selecting Settings reaches the Qt action. This reproduces the condition that
+aborts Qt's Cocoa tray activation callback without physical clicks or accessibility
+permissions.
 
 To refresh the README screenshots on macOS with Qt 6.8 or later, run:
 

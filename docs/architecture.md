@@ -96,7 +96,12 @@ period size/count. Physical rerouting and synchronization require hardware check
 ## Qt tray application
 
 `src/tray/qt_main.cpp` owns the Qt application; `qt_app.cpp` provides the
-`QSystemTrayIcon`, menu and About dialog. `qt_settings.cpp` and `qt_editor.cpp`
+shared Qt menu and About dialog. Windows uses `QSystemTrayIcon`; macOS uses
+a small AppKit status-item adapter in `qt_tray_mac.mm` to host the same native
+`QMenu`. This avoids Qt Cocoa tray activation querying mouse-only properties
+when macOS starts menu tracking with a non-mouse event. Tray actions use
+`NoRole` so Settings, About and Quit stay in the tray menu instead of merging
+into the application menu. `qt_settings.cpp` and `qt_editor.cpp`
 provide the shared Qt Widgets Settings window and player editor. The interface
 uses the C++17 manager in `core.cpp`; the playback backend has no Qt dependency.
 Native helpers in `platform_mac.mm` and `platform_windows.cpp` retain process
