@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "app_info.hpp"
+#include "qt_tray.hpp"
 #include "qt_ui.hpp"
 #include <QAction>
 #include <QApplication>
@@ -42,10 +43,10 @@ QIcon applicationIcon() {
     return icon;
 }
 TrayApplication::TrayApplication(Manager &owner, bool testing)
-    : manager(owner), smoke(testing), settings(manager), tray(applicationIcon()), menu(new QMenu) {
+    : manager(owner), smoke(testing), settings(manager), menu(new QMenu(&settings)) {
+    menu->setObjectName("trayMenu");
     settings.quitRequested = [this] { requestQuit(); };
-    auto configure = menu->addAction(tr("Settings…"), this, [this] { openSettings(); });
-    configure->setMenuRole(QAction::PreferencesRole);
+    menu->addAction(tr("Settings…"), this, [this] { openSettings(); });
     login = menu->addAction(tr("Start app at login"));
     login->setCheckable(true);
     login->setObjectName("loginAction");
@@ -74,22 +75,19 @@ TrayApplication::TrayApplication(Manager &owner, bool testing)
         settings.refresh();
     }));
     menu->addSeparator();
-    auto aboutAction = menu->addAction(tr("About Lyrion Player"), this, [this] { showAbout(); });
-    aboutAction->setMenuRole(QAction::AboutRole);
-    auto quitAction = menu->addAction(tr("Quit Lyrion Player"), this, [this] { requestQuit(); });
-    quitAction->setMenuRole(QAction::QuitRole);
+    menu->addAction(tr("About Lyrion Player"), this, [this] { showAbout(); });
+    menu->addAction(tr("Quit Lyrion Player"), this, [this] { requestQuit(); });
+    // Tray actions must stay in this menu instead of merging into macOS's app menu.
+    for (auto action : menu->actions())
+        action->setMenuRole(QAction::NoRole);
     connect(menu, &QMenu::aboutToShow, this, [this] {
         menuScreen = QGuiApplication::screenAt(QCursor::pos());
         updateLogin();
     });
-    tray.setToolTip(tr("Lyrion Player"));
-    tray.setContextMenu(menu);
-    connect(&tray, &QSystemTrayIcon::activated, this,
-            [this](QSystemTrayIcon::ActivationReason reason) {
-                menuScreen = QGuiApplication::screenAt(QCursor::pos());
-                if (reason == QSystemTrayIcon::DoubleClick)
-                    openSettings();
-            });
+    tray = createTrayIcon(menu, applicationIcon(), tr("Lyrion Player"), [this] {
+        menuScreen = QGuiApplication::screenAt(QCursor::pos());
+        openSettings();
+    });
     QApplication::instance()->installEventFilter(this);
     auto timer = new QTimer(this);
     timer->setInterval(250);
@@ -97,7 +95,7 @@ TrayApplication::TrayApplication(Manager &owner, bool testing)
     timer->start();
     updateLogin();
     if (!smoke) {
-        tray.show();
+        tray->show();
         manager.startConfigured();
         manager.scan();
         if (manager.instances.empty() || !manager.error.empty() ||
@@ -107,8 +105,7 @@ TrayApplication::TrayApplication(Manager &owner, bool testing)
 }
 TrayApplication::~TrayApplication() {
     QApplication::instance()->removeEventFilter(this);
-    tray.hide();
-    tray.setContextMenu(nullptr);
+    tray.reset();
     delete menu;
 }
 void TrayApplication::openSettings() { settings.openSettings(menuScreen); }
@@ -176,7 +173,7 @@ bool TrayApplication::eventFilter(QObject *object, QEvent *event) {
         return true;
     }
     if (event->type() == QEvent::ApplicationPaletteChange) {
-        tray.setIcon(applicationIcon());
+        tray->setIcon(applicationIcon());
         settings.setWindowIcon(applicationIcon());
     }
     return QObject::eventFilter(object, event);
@@ -185,7 +182,7 @@ bool TrayApplication::smokeTest() {
     openSettings();
     QApplication::processEvents();
     bool valid = settings.size() == settings.minimumSize() &&
-                 settings.findChild<QTableWidget *>("playersTable") && !tray.icon().isNull();
+                 settings.findChild<QTableWidget *>("playersTable") && !applicationIcon().isNull();
     settings.openEditor(manager.draft());
     QApplication::processEvents();
     auto editor = settings.findChild<QDialog *>("playerEditor");

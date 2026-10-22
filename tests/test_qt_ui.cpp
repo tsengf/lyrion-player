@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "qt_ui.hpp"
+#include <QAction>
 #include <QApplication>
 #include <QCheckBox>
 #include <QComboBox>
@@ -8,6 +9,7 @@
 #include <QHeaderView>
 #include <QLabel>
 #include <QLineEdit>
+#include <QMenu>
 #include <QPushButton>
 #include <QSignalSpy>
 #include <QStyleHints>
@@ -16,6 +18,10 @@
 #include <QTest>
 #include <QTimer>
 #include <utility>
+
+#ifdef Q_OS_MACOS
+void verifyNativeTrayMenu(QMenu *menu);
+#endif
 
 namespace {
 struct ChildState {
@@ -181,6 +187,31 @@ class QtUiTests : public QObject {
         QVERIFY(found);
         about->close();
         QApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+    }
+    void trayMenu() {
+        QTemporaryDir profile;
+        tray::Manager manager(tray::fs::u8path(profile.path().toStdString()));
+        tray::TrayApplication controller(manager, true);
+        auto menu = controller.settingsWindow().findChild<QMenu *>("trayMenu");
+        QVERIFY(menu);
+        QStringList titles;
+        for (auto action : menu->actions()) {
+            QCOMPARE(action->menuRole(), QAction::NoRole);
+            if (action->isSeparator())
+                continue;
+            QVERIFY(action->isVisible());
+            titles << action->text();
+        }
+        QCOMPARE(titles,
+                 QStringList({"Settings…", "Start app at login", "Start all players",
+                              "Stop all players", "About Lyrion Player", "Quit Lyrion Player"}));
+#ifdef Q_OS_MACOS
+        if (QApplication::platformName() == "cocoa")
+            verifyNativeTrayMenu(menu);
+#endif
+        menu->actions().front()->trigger();
+        QVERIFY(controller.settingsWindow().isVisible());
+        QVERIFY(!manager.quitting);
     }
     void playbackUpdatesAndGracefulQuit() {
         QTemporaryDir profile;

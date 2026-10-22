@@ -19,6 +19,7 @@ class QScreen;
 class QCloseEvent;
 
 namespace tray {
+class TrayIcon;
 QString text(const std::string &value);
 QString pathText(const fs::path &path);
 QIcon applicationIcon();
@@ -86,7 +87,7 @@ class TrayApplication : public QObject {
     Manager &manager;
     bool smoke, finishing = false;
     SettingsWindow settings;
-    QSystemTrayIcon tray;
+    std::unique_ptr<TrayIcon> tray;
     QMenu *menu;
     QAction *login;
     std::vector<QAction *> workActions;
