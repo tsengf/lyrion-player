@@ -1,6 +1,6 @@
 # Development and validation
 
-Build commands are in the [README](../README.md#build). Run the CTest command
+Build commands are in the [README](../README.md#build-from-source). Run the CTest command
 for your platform after building.
 
 ## Automated coverage
