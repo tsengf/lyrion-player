@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.24)
-option(PLAYER_BUILD_TRAY "Build the native instance-management tray application" ON)
+option(PLAYER_BUILD_TRAY "Build the Qt instance-management tray application" ON)
 option(PLAYER_BUILD_PACKAGES "Enable native installation packages" ${PLAYER_BUILD_TRAY})
 # Set the deployment target before enabling languages so the helper and UI agree.
 if(CMAKE_HOST_APPLE AND PLAYER_BUILD_TRAY AND NOT CMAKE_OSX_DEPLOYMENT_TARGET)
@@ -88,12 +88,10 @@ endif()
 install(TARGETS player RUNTIME DESTINATION bin)
 
 if(PLAYER_BUILD_TRAY)
-  enable_language(CXX)
+  find_package(Qt6 6.7 REQUIRED COMPONENTS Widgets Network)
   if(MSVC)
     add_compile_options(/utf-8)
   endif()
-  set(CMAKE_CXX_STANDARD 17)
-  set(CMAKE_CXX_STANDARD_REQUIRED ON)
   add_library(player_tray_core STATIC src/tray/core.cpp src/discovery.c)
   target_include_directories(player_tray_core PUBLIC src/tray vendor/json PRIVATE src)
   target_link_libraries(player_tray_core PUBLIC Threads::Threads)
@@ -101,39 +99,52 @@ if(PLAYER_BUILD_TRAY)
     enable_language(OBJCXX)
     set(CMAKE_OBJCXX_STANDARD 17)
     set(CMAKE_OBJCXX_STANDARD_REQUIRED ON)
-    add_executable(lyrion-player-tray MACOSX_BUNDLE src/tray/mac_app.mm src/tray/platform_mac.mm)
-    target_compile_options(lyrion-player-tray PRIVATE -fobjc-arc)
-    target_link_libraries(lyrion-player-tray PRIVATE player_tray_core "-framework AppKit" "-framework ServiceManagement")
+    add_library(player_tray_platform STATIC src/tray/platform_mac.mm)
+    target_compile_options(player_tray_platform PRIVATE -fobjc-arc)
+    target_link_libraries(player_tray_platform PUBLIC player_tray_core "-framework AppKit" "-framework ServiceManagement")
+  else()
+    target_link_libraries(player_tray_core PUBLIC ws2_32 iphlpapi)
+    target_compile_definitions(player_tray_core PRIVATE _CRT_SECURE_NO_WARNINGS)
+    add_library(player_tray_platform STATIC src/tray/platform_windows.cpp)
+    target_compile_definitions(player_tray_platform PRIVATE UNICODE _UNICODE _WIN32_WINNT=0x0A00 _CRT_SECURE_NO_WARNINGS)
+    target_link_libraries(player_tray_platform PUBLIC player_tray_core shell32 advapi32 ole32 uuid)
+  endif()
+  add_library(player_tray_ui STATIC src/tray/qt_editor.cpp src/tray/qt_settings.cpp src/tray/qt_app.cpp src/tray/qt_ui.hpp)
+  target_link_libraries(player_tray_ui PUBLIC player_tray_core Qt6::Widgets)
+  target_compile_definitions(player_tray_ui PUBLIC PLAYER_APP_VERSION="${PROJECT_VERSION}")
+  qt_add_executable(lyrion-player-tray WIN32 MACOSX_BUNDLE src/tray/qt_main.cpp)
+  target_link_libraries(lyrion-player-tray PRIVATE player_tray_ui player_tray_platform Qt6::Network)
+  set_target_properties(lyrion-player-tray PROPERTIES OUTPUT_NAME "Lyrion Player")
+  if(APPLE)
     set_target_properties(lyrion-player-tray PROPERTIES
-      OUTPUT_NAME "Lyrion Player"
-      OSX_DEPLOYMENT_TARGET "13.0"
       MACOSX_BUNDLE_GUI_IDENTIFIER "org.lyrion-player.tray"
       MACOSX_BUNDLE_BUNDLE_VERSION "${PROJECT_VERSION}"
       MACOSX_BUNDLE_SHORT_VERSION_STRING "${PROJECT_VERSION}"
       MACOSX_BUNDLE_INFO_PLIST "${CMAKE_CURRENT_SOURCE_DIR}/src/tray/Info.plist.in")
-    # Refresh the bundled executable when only backend sources change.
     set_property(TARGET lyrion-player-tray APPEND PROPERTY LINK_DEPENDS "$<TARGET_FILE:player>")
     add_custom_command(TARGET lyrion-player-tray POST_BUILD
       COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:player>
         "$<TARGET_BUNDLE_CONTENT_DIR:lyrion-player-tray>/MacOS/player")
     install(TARGETS lyrion-player-tray BUNDLE DESTINATION . COMPONENT Tray)
   else()
-    target_link_libraries(player_tray_core PUBLIC ws2_32 iphlpapi)
-    target_compile_definitions(player_tray_core PRIVATE _CRT_SECURE_NO_WARNINGS)
-    add_executable(lyrion-player-tray WIN32 src/tray/windows_app.cpp src/tray/platform_windows.cpp)
-    target_compile_definitions(lyrion-player-tray PRIVATE UNICODE _UNICODE _WIN32_WINNT=0x0A00 _CRT_SECURE_NO_WARNINGS)
-    target_link_libraries(lyrion-player-tray PRIVATE player_tray_core comctl32 shell32 user32 gdi32 advapi32 ole32 uuid)
-    set_target_properties(lyrion-player-tray PROPERTIES OUTPUT_NAME "Lyrion Player")
     install(TARGETS lyrion-player-tray player RUNTIME_DEPENDENCY_SET tray_runtime
       RUNTIME DESTINATION . COMPONENT Tray)
     install(RUNTIME_DEPENDENCY_SET tray_runtime
-      DIRECTORIES "$<TARGET_FILE_DIR:player>"
+      DIRECTORIES "$<TARGET_FILE_DIR:player>" "$<TARGET_FILE_DIR:Qt6::Core>"
       PRE_EXCLUDE_REGEXES "api-ms-.*" "ext-ms-.*"
       POST_EXCLUDE_REGEXES ".*[\\/]([Ww]indows)[\\/]([Ss]ystem32)[\\/].*"
       RUNTIME DESTINATION . COMPONENT Tray)
     set(CMAKE_INSTALL_SYSTEM_RUNTIME_DESTINATION .)
     set(CMAKE_INSTALL_SYSTEM_RUNTIME_COMPONENT Tray)
     include(InstallRequiredSystemLibraries)
+    qt_generate_deploy_app_script(TARGET lyrion-player-tray OUTPUT_SCRIPT qt_deploy_script
+      NO_COMPILER_RUNTIME NO_TRANSLATIONS)
+    install(CODE [[
+      set(QT_DEPLOY_BIN_DIR ".")
+      set(QT_DEPLOY_LIB_DIR ".")
+      set(QT_DEPLOY_PLUGINS_DIR "plugins")
+    ]] COMPONENT Tray)
+    install(SCRIPT "${qt_deploy_script}" COMPONENT Tray)
   endif()
   target_compile_definitions(lyrion-player-tray PRIVATE PLAYER_APP_VERSION="${PROJECT_VERSION}")
   add_dependencies(lyrion-player-tray player)
@@ -143,6 +154,15 @@ if(PLAYER_BUILD_TRAY)
     set(player_license_dir licenses)
   endif()
   install(FILES LICENSE COPYING THIRD_PARTY.md vendor/json/LICENSE.MIT DESTINATION "${player_license_dir}" COMPONENT Tray)
+  file(GENERATE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/Qt.txt" CONTENT
+"Qt ${Qt6_VERSION}
+Copyright (C) The Qt Company Ltd. and other contributors.
+Dynamically linked under the GPL-3.0 option. See COPYING.
+Source: https://download.qt.io/archive/qt/${Qt6_VERSION_MAJOR}.${Qt6_VERSION_MINOR}/${Qt6_VERSION}/submodules/
+Modules: qtbase (Core, Gui, Widgets, Network and platform/style plugins).
+Provide corresponding source and dependency notices for your Qt build.
+")
+  install(FILES "${CMAKE_CURRENT_BINARY_DIR}/Qt.txt" DESTINATION "${player_license_dir}" COMPONENT Tray)
   install(DIRECTORY vendor/licenses/ DESTINATION "${player_license_dir}/codecs" COMPONENT Tray)
   install(FILES vendor/miniaudio/miniaudio.h DESTINATION "${player_license_dir}/miniaudio" COMPONENT Tray)
   if(APPLE)
@@ -150,6 +170,7 @@ if(PLAYER_BUILD_TRAY)
     install(CODE [[
       set(APP_BUNDLE "$ENV{DESTDIR}${CMAKE_INSTALL_PREFIX}/Lyrion Player.app")
     ]] COMPONENT Tray)
+    install(CODE "set(MACDEPLOYQT \"$<TARGET_FILE:Qt6::macdeployqt>\")" COMPONENT Tray)
     install(SCRIPT "${CMAKE_CURRENT_SOURCE_DIR}/cmake/DeployMacOS.cmake" COMPONENT Tray)
   endif()
 endif()
@@ -190,15 +211,19 @@ if(PLAYER_BUILD_TESTS)
     add_executable(player_tray_test tests/test_tray.cpp)
     target_include_directories(player_tray_test PRIVATE src)
     target_link_libraries(player_tray_test PRIVATE player_tray_core)
-    if(APPLE)
-      add_executable(player_tray_process_test tests/test_tray_process.cpp src/tray/platform_mac.mm)
-      target_compile_options(player_tray_process_test PRIVATE -fobjc-arc)
-      target_link_libraries(player_tray_process_test PRIVATE player_tray_core "-framework AppKit" "-framework ServiceManagement")
+    add_executable(player_tray_process_test tests/test_tray_process.cpp)
+    target_link_libraries(player_tray_process_test PRIVATE player_tray_platform)
+    find_package(Qt6 6.7 REQUIRED COMPONENTS Test)
+    add_executable(player_qt_ui_test tests/test_qt_ui.cpp)
+    set_target_properties(player_qt_ui_test PROPERTIES AUTOMOC ON)
+    target_link_libraries(player_qt_ui_test PRIVATE player_tray_ui player_tray_platform Qt6::Test)
+    add_test(NAME player_qt_ui COMMAND player_qt_ui_test)
+    if(WIN32)
+      set_tests_properties(player_qt_ui PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=windows")
     else()
-      add_executable(player_tray_process_test tests/test_tray_process.cpp src/tray/platform_windows.cpp)
-      target_compile_definitions(player_tray_process_test PRIVATE UNICODE _UNICODE _WIN32_WINNT=0x0A00)
-      target_link_libraries(player_tray_process_test PRIVATE player_tray_core shell32 advapi32 ole32 uuid)
+      set_tests_properties(player_qt_ui PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
     endif()
+    set_tests_properties(player_qt_ui PROPERTIES TIMEOUT 30)
     add_test(NAME player_tray_process COMMAND player_tray_process_test $<TARGET_FILE:player_test_audio>)
     add_test(NAME player_tray_core COMMAND player_tray_test)
     add_test(NAME player_tray_ui COMMAND $<TARGET_FILE:lyrion-player-tray> --smoke-test)

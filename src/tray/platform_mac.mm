@@ -5,6 +5,7 @@
 #include <fcntl.h>
 #include <spawn.h>
 #include <sys/stat.h>
+#include <sys/file.h>
 #include <sys/wait.h>
 #include <unistd.h>
 #include <crt_externs.h>
@@ -12,9 +13,27 @@
 #include <cstring>
 
 namespace tray::platform {
+std::unique_ptr<AppEnvironment> initializeApplication() { return nullptr; }
 static std::string utf(NSString *s) { return s ? std::string(s.UTF8String) : ""; }
 static NSString *ns(const std::string &s) { return [NSString stringWithUTF8String:s.c_str()]; }
 fs::path configDir() { return fs::u8path(utf(NSHomeDirectory())) / "Library/Application Support/lyrion-player"; }
+class MacAppLock final : public AppLock {
+public:
+    int fd;
+    explicit MacAppLock(int descriptor) : fd(descriptor) {}
+    ~MacAppLock() override { close(fd); }
+};
+std::unique_ptr<AppLock> lockApplication() {
+    fs::create_directories(configDir());
+    int fd = open((configDir() / "tray.lock").c_str(), O_CREAT | O_RDWR | O_CLOEXEC, 0600);
+    if (fd < 0) throw std::runtime_error("Cannot open the tray application lock");
+    if (flock(fd, LOCK_EX | LOCK_NB)) {
+        int error = errno; close(fd);
+        if (error == EWOULDBLOCK || error == EAGAIN) return nullptr;
+        throw std::runtime_error("Cannot lock the tray application");
+    }
+    return std::make_unique<MacAppLock>(fd);
+}
 fs::path logDir() { return fs::u8path(utf(NSHomeDirectory())) / "Library/Logs/lyrion-player"; }
 fs::path backend() {
     auto path = fs::u8path(utf(NSBundle.mainBundle.executablePath)).parent_path() / "player";

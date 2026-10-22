@@ -17,7 +17,13 @@ public:
     virtual void stop() = 0;
     virtual void kill() = 0;
 };
+class AppLock { public: virtual ~AppLock() = default; };
+class AppEnvironment { public: virtual ~AppEnvironment() = default; };
 namespace platform {
+// Keep native networking and shell services alive until after the manager exits.
+std::unique_ptr<AppEnvironment> initializeApplication();
+// A null lock means another tray owns this user session.
+std::unique_ptr<AppLock> lockApplication();
 fs::path configDir();
 fs::path logDir();
 fs::path backend();

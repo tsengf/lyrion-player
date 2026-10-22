@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
+#include <winsock2.h>
 #include <windows.h>
 #include <shellapi.h>
 #include <shlobj.h>
@@ -8,6 +9,35 @@
 #include <algorithm>
 
 namespace tray::platform {
+class WindowsEnvironment final : public AppEnvironment {
+public:
+    WindowsEnvironment() {
+        if (FAILED(CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED)))
+            throw std::runtime_error("Cannot initialize Windows shell services");
+        WSADATA data;
+        if (WSAStartup(MAKEWORD(2, 2), &data)) {
+            CoUninitialize();
+            throw std::runtime_error("Cannot initialize Windows networking");
+        }
+    }
+    ~WindowsEnvironment() override { WSACleanup(); CoUninitialize(); }
+};
+std::unique_ptr<AppEnvironment> initializeApplication() {
+    return std::make_unique<WindowsEnvironment>();
+}
+class WindowsAppLock final : public AppLock {
+public:
+    HANDLE handle;
+    explicit WindowsAppLock(HANDLE value) : handle(value) {}
+    ~WindowsAppLock() override { CloseHandle(handle); }
+};
+std::unique_ptr<AppLock> lockApplication() {
+    HANDLE handle = CreateMutexW(nullptr, FALSE, L"Local\\LyrionPlayerTray");
+    if (!handle) throw std::runtime_error("Cannot create the tray application lock");
+    if (GetLastError() == ERROR_ALREADY_EXISTS) { CloseHandle(handle); return nullptr; }
+    return std::make_unique<WindowsAppLock>(handle);
+}
+
 static std::wstring wide(const std::string &s) {
     if (s.empty()) return {};
     int n = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, s.data(), (int)s.size(), nullptr, 0);

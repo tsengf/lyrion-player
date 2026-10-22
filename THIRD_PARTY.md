@@ -42,3 +42,17 @@ The CMake fallback builds upstream FLAC tag `1.5.0` if FLAC is not installed.
 - SHA-256: `aaf127c04cb31c406e5b04a63f1ae89369fccde6d8fa7cdda1ed4f32dfc5de63`.
 - License: MIT, retained in `vendor/json/LICENSE.MIT`.
 - Used by the shared tray manager for configuration and backend status messages.
+
+## Qt
+
+The desktop interface dynamically links Qt 6 Core, Gui, Widgets and Network from
+[qtbase](https://code.qt.io/cgit/qt/qtbase.git/). Qt Test is used only by tests and
+is not installed with the application. Qt is copyright The Qt Company Ltd. and
+other contributors. The application uses Qt under its GPL-3.0 option; the full
+GPL-3.0 text is included in `COPYING` in each package. Qt runtime version and
+source information are included in `licenses/Qt.txt`.
+
+Deployment includes the platform and style plugins required by the interface.
+Distributors must provide the corresponding Qt source for the version and build
+they distribute, including any patches and third-party dependency notices from
+that Qt build. The backend does not link Qt.
