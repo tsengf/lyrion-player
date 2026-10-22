@@ -260,38 +260,61 @@ The manifest installs codec dependencies. Keep the DLLs that vcpkg copies beside
 
 ### Create installation packages
 
-Packaging follows the same CMake/CPack workflow as SlimPDF. Enable it when
-configuring, build and test, then run CPack from the project folder:
+Packaging follows SpeedCrunch's CMake/CPack workflow. Normal desktop builds enable
+packaging by default. Configure and build, run the tests, then use the `package`
+target; no separate CPack command or packaging flag is needed:
 
 ```sh
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DPLAYER_BUILD_PACKAGES=ON
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build --config Release --parallel
 ctest --test-dir build -C Release --output-on-failure
-cpack --config build/CPackConfig.cmake -C Release
+cmake --build build --config Release --target package
 ```
 
 Keep your platform's dependency options from the build instructions above, such
 as `-DCMAKE_PREFIX_PATH=/opt/local` and `-DPython3_EXECUTABLE=/opt/local/bin/python3.13`
-for MacPorts, or the vcpkg toolchain and `-A x64` for Windows. A fresh build enables
-the tray app automatically when packaging is enabled. If your existing build has
-`PLAYER_BUILD_TRAY=OFF`, also pass `-DPLAYER_BUILD_TRAY=ON`.
+for MacPorts, or the vcpkg toolchain and `-A x64` for Windows. For example, after
+configuring a MacPorts build in `build-macports`, package it with:
+
+```sh
+cmake --build build-macports --config Release --target package
+```
+
+Packages are written directly into the selected build directory, using
+SpeedCrunch-style platform and architecture names:
 
 | Platform | Output example | Requirements |
 | --- | --- | --- |
-| macOS | `build/packages/LyrionPlayer-0.1.0-Darwin-arm64.dmg` | Xcode command-line tools; `hdiutil` and `codesign` ship with macOS. |
-| Windows x64 | `build/packages/LyrionPlayer-0.1.0-Windows-x86_64.exe` | NSIS 3.03 or later on `PATH`, in addition to the build dependencies. |
+| macOS | `build/LyrionPlayer-0.1.0-macos-arm64.dmg` | Xcode command-line tools; `hdiutil` and `codesign` ship with macOS. |
+| Windows x64 | `build/LyrionPlayer-0.1.0-windows-x64.exe` | NSIS 3.03 or later on `PATH`, in addition to the build dependencies. |
 
-Names include the project version and built architecture. macOS DMGs include an
-Applications shortcut for drag-and-drop installation. Windows installers include
-a Start menu shortcut and uninstaller. Both include the backend, codec/runtime
-libraries and licenses. Only the Tray deployment component is packaged; test
-executables and the development CLI install are excluded.
+macOS uses a compressed UDBZ disk image with an Applications shortcut. Codec
+libraries and licenses are installed inside **Lyrion Player.app**, then dependency
+paths are fixed and the complete app is ad-hoc signed and verified before the
+image is created. Windows installers include the backend, codec/runtime libraries,
+licenses, a Start menu shortcut and an uninstaller. Test executables and the
+development CLI install are excluded from both packages.
 
-For a portable ZIP using the same deployment and naming rules:
+To make the `package` target produce a portable ZIP instead, choose the CPack
+generator when configuring:
+
+```sh
+cmake -S . -B build -DCPACK_GENERATOR=ZIP
+cmake --build build --config Release --target package
+```
+
+Use `-DCPACK_GENERATOR=DragNDrop` to switch back to a macOS DMG, or
+`-DCPACK_GENERATOR=NSIS` for a Windows installer. You can still create a one-off
+ZIP without changing the configured generator:
 
 ```sh
 cpack --config build/CPackConfig.cmake -C Release -G ZIP
 ```
+
+Existing CMake caches retain their previous settings. If packaging or the tray app
+was disabled in an older build directory, reconfigure once with
+`-DPLAYER_BUILD_TRAY=ON -DPLAYER_BUILD_PACKAGES=ON`. To build only the backend,
+configure with `-DPLAYER_BUILD_TRAY=OFF -DPLAYER_BUILD_PACKAGES=OFF`.
 
 Build on the platform and architecture you want to distribute. macOS CI builds
 separate Apple Silicon and Intel DMGs. A universal build requires both architectures
@@ -309,6 +332,9 @@ install command remains available:
 ```sh
 cmake --install build --config Release --prefix "$PWD/build/package" --component Tray
 ```
+
+On fresh macOS builds, the default install prefix is `build/install` (or the
+equivalent for your build directory); an explicit install prefix is preserved.
 
 Distribute packages with their licenses and corresponding source. The macOS
 deployment bundles dylibs, fixes their paths and applies an ad-hoc signature.

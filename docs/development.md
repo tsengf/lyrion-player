@@ -26,8 +26,8 @@ silent backend. Native UI smoke tests create the settings/editor controls using 
 temporary profile. Metadata discovery tests collect multiple mock replies. None of
 these tests modify sign-in registrations.
 A CI workflow builds/tests/packages the native apps on macOS and Windows using
-`PLAYER_BUILD_PACKAGES=ON` and CPack. It mounts the macOS DMG, checks the Applications
-shortcut, licenses and signature, and runs both packaged executables in smoke/help
+the default CMake `package` target and CPack. It mounts the macOS DMG, checks the
+Applications shortcut, in-app licenses and signature, and runs both packaged executables in smoke/help
 mode. On Windows it installs the NSIS package into a temporary directory, checks
 runtime DLLs and the Start menu shortcut, smoke-tests both executables, then
 uninstalls it. Local package commands are in the README.
