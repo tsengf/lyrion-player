@@ -17,7 +17,7 @@ Turn a Mac or Windows computer into a playback device for Lyrion Music Server. M
 - **Automatic discovery.** Find servers on your computer and local network, or connect to a chosen host.
 - **Multiple players.** Save separate player identities and queues, including players connected to different servers.
 - **System audio output.** Follow the signed-in user's default output, including device changes during playback. Shared audio allows other applications to play sound too.
-- **Native management.** Add, edit, start and stop players, inspect their status and logs, and open Lyrion from a macOS or Windows interface.
+- **Desktop management.** Add, edit, start and stop players, inspect their status and logs, and open Lyrion from a shared Qt Widgets interface on macOS and Windows.
 - **Optional startup.** Launch the app at login and choose which players start with it. Closing Settings keeps playback running.
 - **Independent playback.** Decode FLAC, MP3, Ogg Vorbis and PCM without Squeezelite. Soxr and miniaudio provide resampling and native audio output.
 
@@ -31,11 +31,11 @@ Download an installer from a successful run of the [**Build and test** workflow]
 | macOS, Intel | `lyrion-player-macos-x86_64` | `.dmg` | Open the image and drag **Lyrion Player.app** to Applications. |
 | Windows x64 | `lyrion-player-windows-x64` | `.exe` | Run the installer, then open **Lyrion Player** from the Start menu. |
 
-The app targets macOS 13 or later and Windows 10 or later. Bundled codec libraries may require a newer OS, so the app's deployment target alone does not guarantee package compatibility with those minimum versions. Packages include the backend and runtime libraries; Python, Homebrew, MacPorts and vcpkg are not needed to run them.
+The app targets macOS 13 or later and Windows 10 or later. Bundled Qt and codec libraries may require a newer OS, so the app's deployment target alone does not guarantee package compatibility with those minimum versions. Packages include the backend and runtime libraries; Python, Homebrew, MacPorts and vcpkg are not needed to run them.
 
 macOS packages are ad-hoc signed without Apple notarization. Windows installers are unsigned. The operating system may show an unverified-app warning.
 
-For a portable installation, [build a ZIP](#portable-zips) and extract the complete package into a permanent folder. On Windows, keep `player.exe`, the DLLs and licenses beside **Lyrion Player.exe**. Place the app in its permanent location before enabling login startup.
+For a portable installation, [build a ZIP](#portable-zips) and extract the complete package into a permanent folder. On Windows, keep `player.exe`, the DLLs, `plugins` folder and licenses beside **Lyrion Player.exe**. Place the app in its permanent location before enabling login startup.
 
 ## Usage
 
@@ -149,6 +149,7 @@ Configuration and logs remain in the locations above. Keep them to reuse your se
 - Git and CMake 3.24 or later.
 - A C++17 compiler and a C99 compiler.
 - FLAC, Ogg/Vorbis, mpg123 and soxr development libraries.
+- Qt 6.7 or later with Widgets and Network; Qt Test for the test suite.
 - Python 3 for the test suite, enabled by default.
 - On macOS, Xcode command-line tools with Objective-C++ and the AppKit SDK.
 - On Windows, Visual Studio 2022 with Desktop development with C++ and [vcpkg](https://github.com/microsoft/vcpkg).
@@ -178,16 +179,16 @@ Development builds use the installed codec libraries. If FLAC is missing, CMake 
 With [Homebrew](https://brew.sh/):
 
 ```bash
-brew install cmake flac libvorbis mpg123 libsoxr python
+brew install cmake qt flac libvorbis mpg123 libsoxr python
 ```
 
 With [MacPorts](https://www.macports.org/):
 
 ```bash
 sudo port selfupdate
-sudo port install cmake flac libogg libvorbis mpg123 soxr python313
+sudo port install cmake flac libogg libvorbis mpg123 soxr qt6-qtbase python313
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release \
-    -DCMAKE_PREFIX_PATH=/opt/local \
+    '-DCMAKE_PREFIX_PATH=/opt/local;/opt/local/libexec/qt6' \
     -DPython3_EXECUTABLE=/opt/local/bin/python3.13
 cmake --build build --config Release --parallel
 ```
@@ -196,14 +197,20 @@ These commands assume the default MacPorts prefix, `/opt/local`, with `/opt/loca
 
 ### Windows dependencies
 
-With `VCPKG_ROOT` set to your vcpkg checkout, run in PowerShell:
+Install Qt 6 for MSVC 2022 x64 with the Qt installer. With `VCPKG_ROOT` set to your vcpkg checkout, run in PowerShell, replacing the Qt path with your installation:
 
 ```powershell
-cmake -S . -B build -A x64 "-DCMAKE_TOOLCHAIN_FILE=$env:VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake"
+cmake -S . -B build -A x64 "-DCMAKE_TOOLCHAIN_FILE=$env:VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake" -DCMAKE_PREFIX_PATH=C:/Qt/6.8.3/msvc2022_64
 cmake --build build --config Release --parallel
 ```
 
-The vcpkg manifest installs codec dependencies. Keep the DLLs copied beside `player.exe` with the executable when moving a development build.
+The vcpkg manifest installs codec dependencies. Add Qt's `bin` directory to `PATH`, then deploy Qt beside the development executables before running the app or tests:
+
+```powershell
+windeployqt --release --no-translations "build/Release/Lyrion Player.exe" "build/Release/player_qt_ui_test.exe"
+```
+
+Omit the test executable when building with tests disabled. Keep the DLLs and plugin folders with the executables when moving a development build.
 
 ### Build options
 
@@ -215,7 +222,7 @@ The vcpkg manifest installs codec dependencies. Keep the DLLs copied beside `pla
 | `PLAYER_AAC` | Enable ADTS/ADIF AAC decoding; requires faad2. | `OFF` |
 | `PLAYER_FETCH_FLAC` | Fetch FLAC 1.5.0 if an installed library is unavailable. | `ON` |
 
-To build only the backend, set `-DPLAYER_BUILD_TRAY=OFF -DPLAYER_BUILD_PACKAGES=OFF`. Existing build directories retain cached options; re-enable disabled features explicitly when reconfiguring.
+The playback backend remains independent of Qt. To build only the backend without Qt, set `-DPLAYER_BUILD_TRAY=OFF -DPLAYER_BUILD_PACKAGES=OFF`. Existing build directories retain cached options; re-enable disabled features explicitly when reconfiguring.
 
 ## Build packages
 
@@ -237,14 +244,14 @@ cmake --build build --config Release --target PACKAGE --parallel
 
 | Platform | Output example | Packaging requirements |
 | --- | --- | --- |
-| macOS | `build/LyrionPlayer-0.1.0-macos-arm64.dmg` | `hdiutil` and `codesign`, included with macOS. |
+| macOS | `build/LyrionPlayer-0.1.0-macos-arm64.dmg` | Qt deployment tools, plus macOS `hdiutil` and `codesign`. |
 | Windows x64 | `build/LyrionPlayer-0.1.0-windows-x64.exe` | NSIS 3.03 or later on `PATH`. |
 
 The package target builds the app, stages its installation and creates the installer. A normal build does not create a package. Files are written directly to the selected build directory.
 
-macOS DMGs use UDBZ compression and contain the app and an Applications shortcut. Deployment installs codec libraries and licenses inside the app, fixes dependency paths, then signs and verifies the complete bundle. It does not notarize the app. Use dependencies built for your oldest supported OS when distributing broadly.
+macOS DMGs use UDBZ compression and contain the app and an Applications shortcut. Deployment installs Qt frameworks, platform/style plugins, codec libraries and licenses inside the app, fixes dependency paths, then signs and verifies the complete bundle. It does not notarize the app. Use dependencies built for your oldest supported OS when distributing broadly.
 
-A universal macOS build requires both architectures in every linked codec library. Configure with `'-DCMAKE_OSX_ARCHITECTURES=arm64;x86_64'` only when those dependencies are available; the filename then includes `macos-arm64-x86_64`.
+A universal macOS build requires both architectures in Qt and every linked codec library. Configure with `'-DCMAKE_OSX_ARCHITECTURES=arm64;x86_64'` only when those dependencies are available; the filename then includes `macos-arm64-x86_64`.
 
 ### Portable ZIPs
 
@@ -293,7 +300,7 @@ Physical device switching and real sign-in behavior require manual validation on
 | `src/native_audio.c`, `src/native_audio.h` | Native audio output through miniaudio. |
 | `src/discovery.c`, `src/discovery.h` | Localhost and LAN server discovery. |
 | `src/managed.cpp`, `src/managed.h` | JSON status and managed-player shutdown. |
-| `src/tray/` | Shared player manager and native macOS/Windows interfaces. |
+| `src/tray/` | Shared Qt Widgets interface, player manager and native platform helpers. |
 | `tests/` | Protocol, playback, discovery, process and tray tests; generated codec fixtures. |
 | `CMakeLists.txt` | Application and test build configuration. |
 | `cmake/Packaging.cmake`, `cmake/DeployMacOS.cmake` | Installer configuration and macOS deployment. |

@@ -22,10 +22,12 @@ Managed-mode tests verify JSON status, graceful stop, stdin EOF, and connected
 shutdown against mock servers. Shared tray tests cover configuration, identities,
 independent lifecycle, bounded restarts and compatibility with older configurations.
 Native process tests exercise real inherited pipes, independent stop and force termination with the
-silent backend. Native UI smoke tests create the settings/editor controls using a
+silent backend. Qt Test exercises server selection, automatic address previews, manual edits,
+validation, persisted identities, selection during refresh, window resizing,
+editor lifetime and About. App smoke tests create the settings/editor controls using a
 temporary profile. Metadata discovery tests collect multiple mock replies. None of
 these tests modify sign-in registrations.
-A CI workflow builds/tests/packages the native apps on macOS and Windows using
+A CI workflow builds/tests/packages the Qt apps on macOS and Windows using
 the default CMake `package` target and CPack. It mounts the macOS DMG, checks the
 Applications shortcut, in-app licenses and signature, and runs both packaged executables in smoke/help
 mode. On Windows it installs the NSIS package into a temporary directory, checks
@@ -57,3 +59,21 @@ Physical device switching requires manual validation on both systems:
 Hardware rerouting and real sign-in registration require manual verification on
 each target system. See [architecture](architecture.md) for the ownership and
 recovery model.
+
+## UI development
+
+The tray frontend requires Qt 6.7 or later (Widgets and Network), plus Qt Test when
+`PLAYER_BUILD_TESTS=ON`. Backend-only builds require no Qt. On Windows, deploy Qt
+next to the test executable before CTest as described in the README. macOS UI unit
+tests use Qt's offscreen platform; the application smoke test uses Cocoa.
+
+To refresh the README screenshots on macOS with Qt 6.8 or later, run:
+
+```bash
+PLAYER_TEST_SCREENSHOT_DIR="$PWD/docs/images" ./build/player_qt_ui_test screenshots
+```
+
+The fixture uses temporary configuration and example addresses. It never starts
+players or changes the system appearance. Inspect both exported themes before
+committing them. Real tray interaction, screen placement, keyboard navigation,
+sign-in and device switching still need manual checks on each platform.

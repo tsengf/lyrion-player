@@ -93,10 +93,14 @@ it changes. Miniaudio's automatic WASAPI rerouting is disabled to avoid blocking
 inside OS notification callbacks. Device latency is an estimate based on native
 period size/count. Physical rerouting and synchronization require hardware checks.
 
-## Native tray application
+## Qt tray application
 
-`src/tray/mac_app.mm` uses AppKit; `windows_app.cpp` uses Win32 common controls and
-Shell_NotifyIcon. Both use the C++17 manager in `core.cpp`. JSON configuration has
+`src/tray/qt_main.cpp` owns the Qt application; `qt_app.cpp` provides the
+`QSystemTrayIcon`, menu and About dialog. `qt_settings.cpp` and `qt_editor.cpp`
+provide the shared Qt Widgets Settings window and player editor. The interface
+uses the C++17 manager in `core.cpp`; the playback backend has no Qt dependency.
+Native helpers in `platform_mac.mm` and `platform_windows.cpp` retain process
+ownership, filesystem paths and sign-in registration. JSON configuration has
 an explicit schema version and is replaced atomically. Player IDs are generated
 once and persisted; duplicate IDs are rejected before launching.
 
@@ -113,7 +117,7 @@ seconds. Settings windows do not own playback lifetime; Quit does.
 A stopped instance stays stopped; editing an active one restarts just that child.
 Unexpected exits retry at 1/2/4 seconds, with the fourth exit in a minute requiring
 manual retry. A launch error affects only that instance. Shutdown disables retries.
-The native main loops poll status without waiting for a server scan: metadata
+A Qt timer polls status every 250 ms without waiting for a server scan: metadata
 scans run asynchronously and support cancellation. Scanning starts with the app
 and repeats 15 seconds after each scan completes, without overlapping scans. The
 shared discovery adapter
@@ -123,3 +127,10 @@ servers and their web ports, with deduplication across interfaces in the manager
 The tray app never creates per-instance startup jobs. Start app at login registers
 only the tray application. Old per-player startup registrations from previous
 versions must be removed manually before configuring those players in Settings.
+
+A native process-owned lock prevents multiple tray instances, including an older
+native frontend running alongside this version. A user-restricted `QLocalServer`
+accepts activation requests so launching the app again opens Settings. Saved
+configuration, player IDs, bundle ID and login registration names remain unchanged.
+Qt windows close without destroying the player manager. Application quit requests
+stop all children through the same bounded shutdown path before Qt exits.
