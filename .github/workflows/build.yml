@@ -19,22 +19,22 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: brew install flac libvorbis mpg123 libsoxr
-      - run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DPLAYER_BUILD_TRAY=ON -DPLAYER_BUILD_PACKAGES=ON -DCMAKE_OSX_DEPLOYMENT_TARGET=13.0
+      - run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_DEPLOYMENT_TARGET=13.0
       - run: cmake --build build --parallel
       - run: ctest --test-dir build --output-on-failure
       - name: Create installation package
-        run: cpack --config build/CPackConfig.cmake -C Release
+        run: cmake --build build --config Release --target package
       - name: Verify disk image and bundled application
         shell: bash
         run: |
-          images=(build/packages/*.dmg)
+          images=(build/*.dmg)
           test "${#images[@]}" -eq 1
           hdiutil verify "${images[0]}"
           mkdir -p build/package-mount
           hdiutil attach -readonly -nobrowse -mountpoint build/package-mount "${images[0]}"
           trap 'hdiutil detach build/package-mount' EXIT
           test -L build/package-mount/Applications
-          test -f build/package-mount/licenses/COPYING
+          test -f "build/package-mount/Lyrion Player.app/Contents/Resources/licenses/COPYING"
           test ! -d build/package-mount/bin
           codesign --verify --deep --strict "build/package-mount/Lyrion Player.app"
           "build/package-mount/Lyrion Player.app/Contents/MacOS/Lyrion Player" --smoke-test
@@ -42,7 +42,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: lyrion-player-macos-${{ matrix.arch }}
-          path: build/packages/*.dmg
+          path: build/*.dmg
           if-no-files-found: error
           retention-days: 30
   windows:
@@ -53,7 +53,7 @@ jobs:
         with:
           python-version: '3.x'
       - shell: pwsh
-        run: cmake -S . -B build -A x64 -DPLAYER_BUILD_TRAY=ON -DPLAYER_BUILD_PACKAGES=ON "-DCMAKE_TOOLCHAIN_FILE=$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake"
+        run: cmake -S . -B build -A x64 "-DCMAKE_TOOLCHAIN_FILE=$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake"
       - run: cmake --build build --config Release --parallel
       - run: ctest --test-dir build -C Release --output-on-failure
       - name: Locate NSIS
@@ -66,11 +66,11 @@ jobs:
           }
           $nsis | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
       - name: Create installation package
-        run: cpack --config build/CPackConfig.cmake -C Release
+        run: cmake --build build --config Release --target package
       - name: Install and smoke test Windows package
         shell: pwsh
         run: |
-          $installers = @(Get-ChildItem build/packages/*.exe)
+          $installers = @(Get-ChildItem build/LyrionPlayer-*.exe)
           if ($installers.Count -ne 1) { throw 'Expected one installer' }
           $destination = Join-Path $env:RUNNER_TEMP 'LyrionPlayer-install'
           $install = Start-Process $installers[0].FullName -ArgumentList '/S', "/D=$destination" -Wait -PassThru
@@ -92,6 +92,6 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: lyrion-player-windows-x64
-          path: build/packages/*.exe
+          path: build/LyrionPlayer-*.exe
           if-no-files-found: error
           retention-days: 30
