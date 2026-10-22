@@ -83,3 +83,10 @@ The fixture uses temporary configuration and example addresses. It never starts
 players or changes the system appearance. Inspect both exported themes before
 committing them. Real tray interaction, screen placement, keyboard navigation,
 sign-in and device switching still need manual checks on each platform.
+
+The application icon uses the tray's speaker design. Its editable source is
+`src/tray/icons/lyrion-player.svg`; PNG, ICO and ICNS outputs are checked in so
+normal builds need no image tools. To regenerate them, run
+`python3 tools/generate-icons.py` with `rsvg-convert` installed. ICNS regeneration
+also requires macOS's `iconutil`. The menu-bar icon stays monochrome for native
+theme support; the app and window icons use the rounded-background variant.

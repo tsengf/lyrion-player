@@ -23,6 +23,7 @@ class TrayIcon;
 QString text(const std::string &value);
 QString pathText(const fs::path &path);
 QIcon applicationIcon();
+QIcon trayIcon();
 
 class PlayerEditor : public QDialog {
   public:

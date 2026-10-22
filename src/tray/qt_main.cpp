@@ -19,6 +19,7 @@ int main(int argc, char **argv) {
     app.setApplicationName("Lyrion Player");
     app.setOrganizationName("lyrion-player");
     app.setApplicationVersion(tray::text(tray::appInfo::version));
+    app.setWindowIcon(tray::applicationIcon());
     app.setQuitOnLastWindowClosed(false);
     bool smoke = app.arguments().contains("--smoke-test");
     try {

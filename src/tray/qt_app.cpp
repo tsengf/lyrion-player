@@ -20,8 +20,18 @@
 #include <QTimer>
 #include <QVBoxLayout>
 
+static void initializeIconResources() { Q_INIT_RESOURCE(player_icons); }
+
 namespace tray {
 QIcon applicationIcon() {
+    static const bool initialized = [] {
+        initializeIconResources();
+        return true;
+    }();
+    Q_UNUSED(initialized);
+    return QIcon(":/src/tray/icons/lyrion-player.png");
+}
+QIcon trayIcon() {
     QIcon icon;
     for (int size : {24, 32, 64}) {
         QPixmap image(size, size);
@@ -84,7 +94,7 @@ TrayApplication::TrayApplication(Manager &owner, bool testing)
         menuScreen = QGuiApplication::screenAt(QCursor::pos());
         updateLogin();
     });
-    tray = createTrayIcon(menu, applicationIcon(), tr("Lyrion Player"), [this] {
+    tray = createTrayIcon(menu, trayIcon(), tr("Lyrion Player"), [this] {
         menuScreen = QGuiApplication::screenAt(QCursor::pos());
         openSettings();
     });
@@ -173,7 +183,7 @@ bool TrayApplication::eventFilter(QObject *object, QEvent *event) {
         return true;
     }
     if (event->type() == QEvent::ApplicationPaletteChange) {
-        tray->setIcon(applicationIcon());
+        tray->setIcon(trayIcon());
         settings.setWindowIcon(applicationIcon());
     }
     return QObject::eventFilter(object, event);

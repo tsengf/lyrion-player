@@ -12,6 +12,8 @@
   <string>Lyrion Player</string>
   <key>CFBundlePackageType</key>
   <string>APPL</string>
+  <key>CFBundleIconFile</key>
+  <string>${MACOSX_BUNDLE_ICON_FILE}</string>
   <key>CFBundleVersion</key>
   <string>${MACOSX_BUNDLE_BUNDLE_VERSION}</string>
   <key>CFBundleShortVersionString</key>

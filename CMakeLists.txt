@@ -111,6 +111,8 @@ if(PLAYER_BUILD_TRAY)
   endif()
   add_library(player_tray_ui STATIC src/tray/qt_editor.cpp src/tray/qt_settings.cpp src/tray/qt_app.cpp src/tray/qt_ui.hpp)
   target_link_libraries(player_tray_ui PUBLIC player_tray_core Qt6::Widgets)
+  qt_add_resources(player_tray_ui player_icons PREFIX "/" FILES
+    src/tray/icons/lyrion-player.png)
   if(APPLE)
     target_sources(player_tray_ui PRIVATE src/tray/qt_tray_mac.mm)
     set_source_files_properties(src/tray/qt_tray_mac.mm PROPERTIES COMPILE_OPTIONS -fobjc-arc)
@@ -123,7 +125,11 @@ if(PLAYER_BUILD_TRAY)
   target_link_libraries(lyrion-player-tray PRIVATE player_tray_ui player_tray_platform Qt6::Network)
   set_target_properties(lyrion-player-tray PROPERTIES OUTPUT_NAME "Lyrion Player")
   if(APPLE)
+    target_sources(lyrion-player-tray PRIVATE src/tray/icons/lyrion-player.icns)
+    set_source_files_properties(src/tray/icons/lyrion-player.icns PROPERTIES
+      MACOSX_PACKAGE_LOCATION Resources)
     set_target_properties(lyrion-player-tray PROPERTIES
+      MACOSX_BUNDLE_ICON_FILE "lyrion-player.icns"
       MACOSX_BUNDLE_GUI_IDENTIFIER "org.lyrion-player.tray"
       MACOSX_BUNDLE_BUNDLE_VERSION "${PROJECT_VERSION}"
       MACOSX_BUNDLE_SHORT_VERSION_STRING "${PROJECT_VERSION}"
@@ -134,6 +140,9 @@ if(PLAYER_BUILD_TRAY)
         "$<TARGET_BUNDLE_CONTENT_DIR:lyrion-player-tray>/MacOS/player")
     install(TARGETS lyrion-player-tray BUNDLE DESTINATION . COMPONENT Tray)
   else()
+    enable_language(RC)
+    configure_file(src/tray/app.rc.in "${CMAKE_CURRENT_BINARY_DIR}/player-app.rc" @ONLY)
+    target_sources(lyrion-player-tray PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/player-app.rc")
     install(TARGETS lyrion-player-tray player RUNTIME_DEPENDENCY_SET tray_runtime
       RUNTIME DESTINATION . COMPONENT Tray)
     install(RUNTIME_DEPENDENCY_SET tray_runtime
