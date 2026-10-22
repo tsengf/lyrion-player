@@ -68,7 +68,8 @@ next to the test executable before CTest as described in the README. macOS UI un
 tests use Qt's offscreen platform; the application smoke test uses Cocoa.
 `player_tray_menu_native` also uses Cocoa: it checks native menu contents, opens
 and dismisses the menu repeatedly with a non-mouse application event, and verifies
-that selecting Settings reaches the Qt action. This reproduces the condition that
+that selecting Settings reaches the Qt action. It also checks left-click Settings
+activation, right-click menu tracking and non-mouse activation. This reproduces the condition that
 aborts Qt's Cocoa tray activation callback without physical clicks or accessibility
 permissions.
 

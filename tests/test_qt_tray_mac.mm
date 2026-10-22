@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "qt_tray.hpp"
+#include "qt_tray_mac_p.hpp"
 #import <AppKit/AppKit.h>
 #include <QAction>
 #include <QApplication>
@@ -16,16 +17,26 @@ class ApplicationEvent {
     IMP original, replacement;
 
   public:
-    ApplicationEvent() {
-        NSEvent *event = [NSEvent otherEventWithType:NSEventTypeApplicationDefined
-                                            location:NSZeroPoint
-                                       modifierFlags:0
-                                           timestamp:0
-                                        windowNumber:0
-                                             context:nil
-                                             subtype:0
-                                               data1:0
-                                               data2:0];
+    explicit ApplicationEvent(NSEventType type = NSEventTypeApplicationDefined) {
+        NSEvent *event = type == NSEventTypeApplicationDefined
+                             ? [NSEvent otherEventWithType:type
+                                                  location:NSZeroPoint
+                                             modifierFlags:0
+                                                 timestamp:0
+                                              windowNumber:0
+                                                   context:nil
+                                                   subtype:0
+                                                     data1:0
+                                                     data2:0]
+                             : [NSEvent mouseEventWithType:type
+                                                  location:NSZeroPoint
+                                             modifierFlags:0
+                                                 timestamp:0
+                                              windowNumber:0
+                                                   context:nil
+                                               eventNumber:1
+                                                clickCount:1
+                                                  pressure:0];
         method = class_getInstanceMethod([NSApp class], @selector(currentEvent));
         replacement = imp_implementationWithBlock(^NSEvent *(id) {
           return event;
@@ -73,5 +84,32 @@ void verifyNativeTrayMenu(QMenu *menu) {
     QVERIFY(item.action);
     QVERIFY([NSApp sendAction:item.action to:item.target from:item]);
     QTRY_COMPARE(selected.count(), 1);
+    int activations = 0;
+    LyrionTrayClickTarget *target = [[LyrionTrayClickTarget alloc] initWithMenu:menu
+                                                                       activate:[&] {
+                                                                           ++activations;
+                                                                           settings->trigger();
+                                                                       }];
+    {
+        ApplicationEvent left(NSEventTypeLeftMouseUp);
+        [target clicked:nil];
+    }
+    QCOMPARE(activations, 1);
+    QCOMPARE(opening.count(), 3); // A left click opens Settings without a menu.
+    {
+        ApplicationEvent right(NSEventTypeRightMouseUp);
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 150 * NSEC_PER_MSEC),
+                       dispatch_get_main_queue(), ^{
+                         [native cancelTracking];
+                       });
+        [target clicked:nil];
+    }
+    QCOMPARE(activations, 1);
+    QCOMPARE(opening.count(), 4); // A right click keeps the context menu available.
+    {
+        ApplicationEvent keyboard;
+        [target clicked:nil];
+    }
+    QCOMPARE(activations, 2); // Accessibility/non-mouse activation is also safe.
     icon->hide();
 }

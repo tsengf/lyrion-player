@@ -1,9 +1,33 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "qt_tray.hpp"
-#import <AppKit/AppKit.h>
+#include "qt_tray_mac_p.hpp"
 #include <QBuffer>
 #include <QMenu>
 #include <QPixmap>
+
+@implementation LyrionTrayClickTarget {
+    QMenu *menu;
+    std::function<void()> activate;
+}
+- (instancetype)initWithMenu:(QMenu *)value activate:(std::function<void()>)callback {
+    if ((self = [super init])) {
+        menu = value;
+        activate = std::move(callback);
+    }
+    return self;
+}
+- (void)clicked:(NSStatusBarButton *)button {
+    // Keyboard/accessibility activation may have a non-mouse current event.
+    // Inspect only its type; querying clickCount caused the previous Qt crash.
+    auto type = NSApp.currentEvent.type;
+    if (type == NSEventTypeRightMouseUp || type == NSEventTypeRightMouseDown) {
+        NSMenu *native = menu->toNSMenu();
+        [native popUpMenuPositioningItem:nil atLocation:NSMakePoint(0, 0) inView:button];
+    } else {
+        activate();
+    }
+}
+@end
 
 namespace tray {
 // Qt's Cocoa tray activation callback queries NSApp.currentEvent.clickCount.
@@ -11,19 +35,26 @@ namespace tray {
 // Host Qt's native menu directly so no Qt tray activation observer is installed.
 class MacTrayIcon final : public TrayIcon {
     NSStatusItem *item = nil;
+    LyrionTrayClickTarget *target = nil;
     QMenu *menu;
     QIcon icon;
     QString tooltip;
+    std::function<void()> activate;
 
   public:
-    MacTrayIcon(QMenu *menu, const QIcon &icon, const QString &tooltip)
-        : menu(menu), icon(icon), tooltip(tooltip) {}
+    MacTrayIcon(QMenu *menu, const QIcon &icon, const QString &tooltip,
+                std::function<void()> activate)
+        : menu(menu), icon(icon), tooltip(tooltip), activate(std::move(activate)) {}
     ~MacTrayIcon() override { hide(); }
     void show() override {
         if (item)
             return;
         item = [NSStatusBar.systemStatusBar statusItemWithLength:NSVariableStatusItemLength];
-        item.menu = menu->toNSMenu();
+        // Assigning item.menu would make AppKit open it on both mouse buttons.
+        target = [[LyrionTrayClickTarget alloc] initWithMenu:menu activate:activate];
+        item.button.target = target;
+        item.button.action = @selector(clicked:);
+        [item.button sendActionOn:NSEventMaskLeftMouseUp | NSEventMaskRightMouseUp];
         auto utf8 = tooltip.toUtf8();
         item.button.toolTip = [[NSString alloc] initWithBytes:utf8.constData()
                                                        length:utf8.size()
@@ -33,9 +64,11 @@ class MacTrayIcon final : public TrayIcon {
     void hide() override {
         if (!item)
             return;
-        item.menu = nil;
+        item.button.target = nil;
+        item.button.action = nullptr;
         [NSStatusBar.systemStatusBar removeStatusItem:item];
         item = nil;
+        target = nil;
     }
     void setIcon(const QIcon &image) override {
         icon = image;
@@ -54,7 +87,7 @@ class MacTrayIcon final : public TrayIcon {
 };
 
 std::unique_ptr<TrayIcon> createTrayIcon(QMenu *menu, const QIcon &icon, const QString &tooltip,
-                                         std::function<void()>) {
-    return std::make_unique<MacTrayIcon>(menu, icon, tooltip);
+                                         std::function<void()> activate) {
+    return std::make_unique<MacTrayIcon>(menu, icon, tooltip, std::move(activate));
 }
 } // namespace tray

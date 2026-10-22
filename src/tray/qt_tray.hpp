@@ -17,5 +17,5 @@ class TrayIcon {
 };
 
 std::unique_ptr<TrayIcon> createTrayIcon(QMenu *menu, const QIcon &icon, const QString &tooltip,
-                                         std::function<void()> doubleClicked);
+                                         std::function<void()> activate);
 } // namespace tray

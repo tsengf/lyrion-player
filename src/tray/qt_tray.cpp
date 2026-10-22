@@ -9,13 +9,14 @@ class QtTrayIcon final : public TrayIcon {
 
   public:
     QtTrayIcon(QMenu *menu, const QIcon &image, const QString &tooltip,
-               std::function<void()> doubleClicked)
+               std::function<void()> activate)
         : icon(image) {
         icon.setContextMenu(menu);
         icon.setToolTip(tooltip);
         QObject::connect(&icon, &QSystemTrayIcon::activated, &icon,
-                         [callback = std::move(doubleClicked)](auto reason) {
-                             if (reason == QSystemTrayIcon::DoubleClick)
+                         [callback = std::move(activate)](auto reason) {
+                             if (reason == QSystemTrayIcon::Trigger ||
+                                 reason == QSystemTrayIcon::DoubleClick)
                                  callback();
                          });
     }
@@ -25,7 +26,7 @@ class QtTrayIcon final : public TrayIcon {
 };
 
 std::unique_ptr<TrayIcon> createTrayIcon(QMenu *menu, const QIcon &icon, const QString &tooltip,
-                                         std::function<void()> doubleClicked) {
-    return std::make_unique<QtTrayIcon>(menu, icon, tooltip, std::move(doubleClicked));
+                                         std::function<void()> activate) {
+    return std::make_unique<QtTrayIcon>(menu, icon, tooltip, std::move(activate));
 }
 } // namespace tray

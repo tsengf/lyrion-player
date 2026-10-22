@@ -43,7 +43,7 @@ Lyrion Player requires a running Lyrion Music Server. The tray app manages playb
 
 ### Quick start
 
-1. Open **Settings…** from the menu-bar or tray icon and choose **Add…**.
+1. Left-click the menu-bar or tray icon to open Settings, then choose **Add…**.
 2. Enter a player name. Choose **Automatic**, a discovered server, or **Manual address** with a host and SlimProto port, normally `3483`.
 3. Save, select the player, and choose **Start / Stop**. Select that player in Lyrion and start music.
 4. Repeat **Add…** for additional players. Optionally enable **Start app at login** and choose which players start with the app.
@@ -88,6 +88,8 @@ Player names may repeat, but distinct names make them easier to identify. Each p
 **Only the tray app is registered at login.** Players have no individual LaunchAgents, scheduled tasks, or Windows services. Startup runs in your user session so playback follows the selected output device. Put the app in its permanent location before enabling startup; administrator privileges are not needed.
 
 If macOS requests approval, enable Lyrion Player in System Settings → General → Login Items. See [architecture](docs/architecture.md) for registration and process ownership details.
+
+Left-click the icon to open Settings. Right-click it to open the tray menu.
 
 The tray menu contains **Settings…**, the **Start app at login** toggle, **Start all players**, **Stop all players**, **About Lyrion Player**, and **Quit Lyrion Player**. About shows the version, credits, license, and project website.
 
